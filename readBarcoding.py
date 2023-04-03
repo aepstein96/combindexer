@@ -315,7 +315,7 @@ def makeReadDict(barcode_folder, input_folder, output_folder):
 def barcodeReadsSample(sample, barcode_folder, input_folder, output_folder):
     
     # Make dictionaries (temporary until I can fix the multiprocessing issue)
-   `` read_dict = makeReadDict(barcode_folder, input_folder, output_folder)
+    read_dict = makeReadDict(barcode_folder, input_folder, output_folder)
     barcode_dict = makeBarDict(barcode_folder)
     
     # Read in barcodes in the correct order
