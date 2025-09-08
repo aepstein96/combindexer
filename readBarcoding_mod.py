@@ -8,16 +8,15 @@ import glob
 import sys
 import os
 import fire
-
-# For a given barcode, returns list of barcodes a given Levenshtein distance away
-
+import itertools
+import csv
 
 def getCombinedVariants(
-    seq, 
+    mid_seq, 
     distance,
-    post_context="",
-    correct_snps=True,
-    correct_indels=True,
+    correct_snps,
+    correct_indels,
+    post_context="", 
     bases={'A', 'C', 'G', 'T', 'N'}
 ):
     """
@@ -26,14 +25,12 @@ def getCombinedVariants(
 
     This version has been corrected to remove the flawed pre_context logic.
     All deletions are now correctly compensated by the post_context.
-    
-    Returns a map of {variant: (post_context, distance)}.
     """
-    # The state now tracks variant, post_context, and distance
-    all_variants_map = {seq: (post_context, 0)}
-    last_generation = [(seq, post_context)]
+    # The state now only needs to track the variant and its post_context
+    all_variants_map = {mid_seq: post_context}
+    last_generation = [(mid_seq, post_context)]
 
-    for d in range(distance):
+    for _ in range(distance):
         current_generation = []
         
         for var, post in last_generation:
@@ -46,7 +43,7 @@ def getCombinedVariants(
                         if new_base != original_base:
                             new_variant = var[:i] + new_base + var[i+1:]
                             if new_variant not in all_variants_map:
-                                all_variants_map[new_variant] = (post, d + 1)
+                                all_variants_map[new_variant] = post
                                 current_generation.append((new_variant, post))
 
             # 2. Generate Indels
@@ -59,49 +56,83 @@ def getCombinedVariants(
                         if new_variant not in all_variants_map:
                             # New post_context is one char shorter
                             new_post = post[1:]
-                            all_variants_map[new_variant] = (new_post, d + 1)
+                            all_variants_map[new_variant] = new_post
                             current_generation.append((new_variant, new_post))
                     else: # Fallback: No post_context, pad with all bases
                         for b in bases:
                             new_variant = deleted_in_slice + b
                             if new_variant not in all_variants_map:
-                                all_variants_map[new_variant] = ("", d + 1)
+                                all_variants_map[new_variant] = ""
                                 current_generation.append((new_variant, ""))
                 
                 # Insertions anywhere (compensated by truncation)
                 for i in range(len(var) + 1):
                     for b in bases:
                         inserted = var[:i] + b + var[i:]
-                        new_variant = inserted[:len(seq)]
+                        new_variant = inserted[:len(mid_seq)]
                         if new_variant not in all_variants_map:
                             # New post_context is the truncated char + old post
                             new_post = inserted[-1] + post
-                            all_variants_map[new_variant] = (new_post, d + 1)
+                            all_variants_map[new_variant] = new_post
                             current_generation.append((new_variant, new_post))
         
         last_generation = current_generation
         
-    return all_variants_map
+    return set(all_variants_map.keys())
 
 
 # For a list of correct barcodes, creates a dictionary mapping uncorrected barcodes to correct barcodes
-def getCorrDict(correct_bars, default=None, ambiguous=None, **kwargs):
-    out_dict = defaultdict(lambda: default) # returns default if a non-matching barcode is inputted
+def getCorrDict(bar_dict, default=None, correction_distance=0, correct_snps=False, correct_indels=False, 
+                check_overlaps=False, ambiguous_barcode=None, 
+                orientation='forward', bases={'A', 'C', 'G', 'T', 'N'}):
+    
+    corr_dict = defaultdict(lambda: default)
     ambiguous_variants = set()
-    for correct_bar in correct_bars:
-        for bar in getCombinedVariants(correct_bar, **kwargs):
-            if bar not in ambiguous_variants:
-                if bar in out_dict:
-                    if out_dict[bar] != correct_bar:
-                        ambiguous_variants.add(bar)
-                        if ambiguous:
-                            out_dict[bar] = ambiguous
-                        else:
-                            del out_dict[bar]
-                else:
-                    out_dict[bar] = correct_bar
 
-    return out_dict
+    for canonical_slice, bar_obj in bar_dict.items():
+        
+        full_seq = bar_obj.seq
+        if orientation == 'reverse':
+            full_seq = revComp(full_seq)
+        
+        # The length is implicitly defined by the canonical slice
+        length = len(canonical_slice)
+        post_context = full_seq[length:]
+
+        variants_to_check = getCombinedVariants(
+            canonical_slice,
+            correction_distance,
+            correct_snps,
+            correct_indels,
+            post_context,
+            bases
+        )
+
+        for var in variants_to_check:
+            if var in ambiguous_variants:
+                continue
+
+            # If check_overlaps is on and we find a collision
+            if check_overlaps and var in corr_dict and corr_dict[var] != canonical_slice:
+                ambiguous_variants.add(var)
+                # If an 'Ambiguous' barcode is defined, map to it, otherwise remove the key
+                if ambiguous_barcode:
+                    corr_dict[var] = 'Ambiguous' # Use a placeholder
+                else:
+                    if var in corr_dict:
+                        del corr_dict[var]
+            elif var not in corr_dict: # Don't overwrite an existing mapping
+                corr_dict[var] = canonical_slice
+
+    # Now, build the final dictionary, resolving placeholders to actual objects
+    final_dict = defaultdict(lambda: default)
+    for variant, result_key in corr_dict.items():
+        if result_key == 'Ambiguous':
+            final_dict[variant] = ambiguous_barcode
+        else:
+            final_dict[variant] = bar_dict[result_key]
+            
+    return final_dict
 
 # Returns reverse complement of sequence
 # Not as flexible as Bio.Seq, but probably faster and easier to use
@@ -204,16 +235,26 @@ class Read:
             elif command_name.startswith('Bar:'): # a barcode
                 bar_name = command_name[4:]
                 bar_pos = barcode_dict[bar_name]
-                bar = bar_pos.getBar(self.seq[start:start+bar_pos.length])
+                
+                # Since all variants are now the same length, we can do a direct lookup.
+                if start + bar_pos.length > len(self.seq):
+                    if output_full:
+                        print(f"Not enough sequence left for barcode {bar_name}")
+                    return False
+
+                read_bar_seq = self.seq[start:start+bar_pos.length]
+                bar = bar_pos.getBar(read_bar_seq)
                 
                 if not bar:
                     if output_full:
                         print("No match for %s. Start: %d. File: %s. Read sequence: %s" % (bar_name, start, self.in_path, self.seq))
                     return False
                 
-                #print("Bar name: %s. Bar sequence: %s. Read bar sequence: %s. Length: %d" % (bar_name, bar.seq, self.seq[start:start+bar_pos.length], bar.length))
+                # print("Bar name: %s. Bar sequence: %s. Read bar sequence: %s. Length: %d" % (bar_name, bar.seq, read_bar_seq, bar.length))
                 
-                start += bar.length
+                # Advance start position by the length of the barcode segment that was read.
+                start += bar_pos.length
+
                 cur_bars[bar_name] = bar
                 if bar.next_commands:
                     #print("Found next commands! Remaining commands: %s" % str(bar.next_commands))
@@ -261,127 +302,144 @@ class Barcode:
         self.length = len(seq)
         
 class BarcodePos:
-    def __init__(self, bar_list, length_to_use, plate_list, corr_dist, orientation, correct_snps, correct_indels):
+    def __init__(self, bar_list, length, plate_list, correction_distance, 
+                 correct_snps, correct_indels, check_overlaps, orientation):
         
-        # Get length of shortest barcode, this is what will be used for disambiguation
-        # Also see if there is a default for "No match"
+        # Store parameters
+        self.length = length
+        self.plate_list = plate_list
+        self.correction_distance = correction_distance
+        self.correct_snps = correct_snps
+        self.correct_indels = correct_indels
+        self.check_overlaps = check_overlaps
+        self.orientation = orientation
         self.no_match = None
         self.ambiguous = None
-        min_length = length_to_use
-        true_bars = [] # doesn't include no match
+        
+        # Find the "No match" and "Ambiguous" barcodes
+        true_bars = []
         for bar in bar_list:
             if bar.seq == 'No match':
                 self.no_match = bar
-                continue
-            if bar.seq == 'Ambiguous':
+            elif bar.seq == 'Ambiguous':
                 self.ambiguous = bar
-                continue
-                
-            if bar.length < min_length:
-                min_length = bar.length
-                
-            true_bars.append(bar)
-        
-        self.length = min_length
-        self.plate_list = plate_list
-        self.orientation = orientation
-                
-        # Make barcode correction dictionary
-        potential_corrections = defaultdict(list)
-        for bar in true_bars:
-            if plate_list:
-                if bar.plate not in plate_list:
-                    continue
-                    
-            if orientation == 'reverse':
-                seq = revComp(bar.seq)
             else:
-                seq = bar.seq
-            
-            post_context = seq[min_length:]
-            bar_seq = seq[:min_length]
-            
-            variants_map = getCombinedVariants(bar_seq, corr_dist, post_context, correct_snps, correct_indels)
-            for var_seq, (_, dist) in variants_map.items():
-                potential_corrections[var_seq].append((bar, dist))
+                true_bars.append(bar)
+                if len(bar.seq) < self.length:
+                    self.length = len(bar.seq)
+                
+        if not true_bars:
+             self.bar_dict = {}
+             self.corr_dict = defaultdict(lambda: self.no_match)
+             return
 
-        self.corr_dict = defaultdict(lambda: self.no_match)
-        for var_seq, candidates in potential_corrections.items():
-            if len(candidates) == 1:
-                self.corr_dict[var_seq] = candidates[0][0]
+        # If length is 'all', find the minimum length from the barcode list
+        if self.length == 'all':
+            self.length = min(len(bar.seq) for bar in true_bars) if true_bars else 0
+        else:
+            self.length = int(self.length)
+        
+        # Make barcode dictionary mapping canonical slice to barcode object
+        self.bar_dict = {}
+        for bar in true_bars:
+            if self.plate_list and self.plate_list[0] != 'all' and bar.plate not in self.plate_list:
                 continue
+            
+            full_seq = bar.seq
+            if self.orientation == 'reverse':
+                full_seq = revComp(full_seq)
 
-            min_dist = min(c[1] for c in candidates)
-            best_matches = [c[0] for c in candidates if c[1] == min_dist]
+            if len(full_seq) < self.length:
+                continue
+            
+            key_seq = full_seq[:self.length]
+            self.bar_dict[key_seq] = bar
+        
+        # Make correction dictionary
+        if self.correction_distance > 0:
+            self.corr_dict = getCorrDict(
+                self.bar_dict,
+                default=self.no_match,
+                correction_distance=self.correction_distance,
+                correct_snps=self.correct_snps,
+                correct_indels=self.correct_indels,
+                check_overlaps=self.check_overlaps,
+                ambiguous_barcode=self.ambiguous,
+                orientation=self.orientation
+            )
+        else:
+            self.corr_dict = defaultdict(lambda: self.no_match, self.bar_dict)
 
-            if len(best_matches) == 1:
-                self.corr_dict[var_seq] = best_matches[0]
-            elif self.ambiguous:
-                self.corr_dict[var_seq] = self.ambiguous
-                        
-    
+
     # Returns barcode information
     def getBar(self, bar_seq):
         return self.corr_dict[bar_seq]
 
     
 def makeBarDict(barcode_folder, output_full=False):
-    bar_dict = {}
-    for bar_file in os.listdir(barcode_folder):
-        if bar_file.endswith('.csv') and bar_file.startswith('Barcode-'):
-            name = bar_file.split('-')[1].split('.')[0]
-            with open(os.path.join(barcode_folder, bar_file), 'rt') as f:
-                length_to_use = f.readline().split(',')[1].strip()
-                if length_to_use == 'all':
-                    length_to_use = float('inf')
-                else:
-                    length_to_use = int(length_to_use)
-                    
-                plates_to_use = f.readline().split(',')[1].strip()
-                if plates_to_use == 'all':
-                    plate_list = None
-                else:
-                    plate_list = plates_to_use.split(';')
-                    
-                corr_dist = f.readline().split(',')[1].strip()
-                if corr_dist: # deals with 0 becoming blank in certain cases
-                    corr_dist = int(corr_dist)
-                else:
-                    corr_dist = 0
+    
+    barcode_pos_dict = {} # a dictionary of BarcodePos objects, keyed by the barcode name
+    
+    barcode_files = glob.glob(os.path.join(barcode_folder, "Barcode-*.csv"))
+    
+    for bar_file in barcode_files:
+        name = os.path.basename(bar_file).replace("Barcode-", "").replace(".csv", "")
+        
+        with open(bar_file, 'r') as file:
+            lines = file.readlines()
+            
+            # Parse settings from the first 7 lines
+            settings_lines = [line.strip().split(',') for line in lines[:7]]
+            length_to_use = settings_lines[0][1]
+            if length_to_use == 'all':
+                length_to_use = 'all'
+            else:
+                length_to_use = int(length_to_use)
+            
+            plates_to_use = settings_lines[1][1].split(';')
+            correction_distance = int(settings_lines[2][1])
+            orientation = settings_lines[3][1]
+            correction_type = settings_lines[4][1].lower()
+            correct_snps = 'snp' in correction_type
+            correct_indels = 'indel' in correction_type
+            check_overlaps = settings_lines[6][1].lower() == 'true'
+
+            # The 8th line is the header for the barcode data
+            header = [h.strip() for h in lines[7].split(',')]
+            
+            bar_list = []
+            
+            # Use DictReader on the rest of the lines
+            reader = csv.DictReader(lines[8:], fieldnames=header)
+            for row in reader:
+                if not row.get('Barcode'):
+                    continue
                 
-                correct_snps = f.readline().split(',')[1].strip()
-                if correct_snps.lower() == 'true':
-                    correct_snps = True
-                else:
-                    correct_snps = False 
-                    
-                correct_indels = f.readline().split(',')[1].strip()
-                if correct_indels.lower() == 'true':
-                    correct_indels = True
-                else:
-                    correct_indels = False
-                    
-                if output_full:
-                    print("Corr dist: %d" % corr_dist)
-                orientation = f.readline().split(',')[1].strip()
-                f.readline()
-                f.readline()
-                
-                bar_list = []
-                for line in f:
-                    seq, plate, well, condition, read_type, gene, next_command_string = line.strip().split(',')[:7]
-                    
-                    if not seq: # blank line at end of file
-                        break
-                    
-                    if next_command_string:
-                        next_commands = next_command_string.split(';')
-                    else:
-                        next_commands = None
-                    bar_list.append(Barcode(seq, plate, well, condition, read_type, gene, next_commands))
-                    
-            bar_dict[name] = BarcodePos(bar_list, length_to_use, plate_list, corr_dist, orientation, correct_snps, correct_indels) 
-    return bar_dict
+                bar_list.append(
+                    Barcode(
+                        seq=row.get('Barcode', ''),
+                        plate=row.get('Plate', ''),
+                        well=row.get('Well', ''),
+                        condition=row.get('Condition', ''),
+                        read_type=row.get('Read Type', ''),
+                        gene=row.get('Gene', ''),
+                        next_commands=row.get('Next Commands', '').split(';') if row.get('Next Commands') else []
+                    )
+                )
+
+            # Create the BarcodePos object with all the data
+            barcode_pos_dict[name] = BarcodePos(
+                bar_list=bar_list,
+                length=length_to_use,
+                plate_list=plates_to_use,
+                correction_distance=correction_distance,
+                correct_snps=correct_snps,
+                correct_indels=correct_indels,
+                check_overlaps=check_overlaps,
+                orientation=orientation
+            )
+
+    return barcode_pos_dict
 
 def makeReadDict(barcode_folder, input_folder, output_folder):
     # Get read information
@@ -499,7 +557,7 @@ def barcodeReadsSample(sample, barcode_folder, input_folder, output_folder, gene
                     continue
                 
                 # Construct header from barcodes and UMIs
-                cur_bars_ordered = [cur_bars[bar_name] for bar_name in ordered_bar_list] # probably not necessary now that dictionaries are ordered in Python 3.7+
+                cur_bars_ordered = list(cur_bars.values()) # Dictionaries are ordered in Python 3.7+
                 plate_wells = ';'.join(["%s-%s" % (bar.plate, bar.well) for bar in cur_bars_ordered])
                 conditions = ';'.join([bar.condition for bar in cur_bars_ordered])
                 wells_conditions = '&'.join((plate_wells, conditions))

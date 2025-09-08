@@ -1,0 +1,8 @@
+Length to use,all,,,,,
+Plates to use,all,,,,,
+Correction distance,1,,,,,
+Orientation,forward,,,,,
+,,,,,,
+Barcode,Plate,Well,Condition,Read Type,Gene,Next Commands
+GGCTCGCTAG,Targeted,E2,HGG5,,,
+TTATTATCGT,Targeted,F2,HGG5,,,
