@@ -1,0 +1,6 @@
+ok amazing. now, let's checkout a new branch called 0925_updates. Then, modify readBarcoding to output stats:
+
+* for each barcode, output the number of exact matches and the number of corrected matches
+* Keep a tally, for each bar_name, of how often the barcode returns an exact  is rejected (False)
+
+Keep comments short and to the point as in the current script. Keep the overall script elegant and make minimal changes to achieve the desired goal.
