@@ -110,8 +110,9 @@ def revComp(seq, comp_dict={'A':'T','G':'C','C':'G','T':'A','N':'N'}):
 
 
 class Read:
-    def __init__(self, name, commands, in_pattern, out_patterns=None, trim_partner=None, trim_partner_len=17, min_length=20):
+    def __init__(self, name, sample, commands, in_pattern, out_patterns=None, trim_partner=None, trim_partner_len=17, min_length=20, debug_mode=False):
         self.name = name
+        self.sample = sample
         self.commands = commands
         self.in_pattern = in_pattern
         self.out_patterns = out_patterns or []  # List of output file patterns
@@ -119,19 +120,11 @@ class Read:
         self.trim_partner_len = trim_partner_len
         self.sample = None
         self.min_length = min_length
-        
-        # Paths are assigned through assignSample
-        self.in_path = None
-        self.out_paths = []  # List of actual output file paths
         self.out_files = []  # List of open file handles
         
-       
-    
-    def assignSample(self, sample, debug_mode): # assigns the sample name, updating input and output paths                                                                                                       
         if debug_mode:
             print("Input pattern: %s. Sample: %s" % (self.in_pattern, sample))
             
-        self.sample = sample
         self.in_paths = glob.glob(self.in_pattern.replace("{SAMPLE}", sample))
         if self.in_paths:
             self.in_path = self.in_paths[0]
@@ -250,61 +243,13 @@ class Read:
             self.qual = self.qual[:search_seq_pos]
         
         return True
-    
-    def write_fastq(self, file_number=1, head=None, seq=None, sep=None, qual=None):
-        """Write a FASTQ record to the specified output file"""
-        
-        # Convert to 0-indexed
-        file_idx = file_number - 1
-        
-        if file_idx >= len(self.out_files):
-            raise ValueError(f"Output file {file_number} not defined for read {self.name}")
-        
-        out_file = self.out_files[file_idx]
-        
-        if head is None:
-            head = self.head
-        if seq is None:
-            seq = self.seq
-        if sep is None:
-            sep = self.sep
-        if qual is None:
-            qual = self.qual
-            
-        out_file.write(head + '\n')
-        out_file.write(seq + '\n')
-        out_file.write(sep + '\n')
-        out_file.write(qual + '\n')
-    
-    def write_csv(self, file_number=1, data_row=None):
-        """Write a CSV row to the specified output file"""
-            
-        # Convert to 0-indexed
-        file_idx = file_number - 1
-        
-        if file_idx >= len(self.out_files):
-            raise ValueError(f"Output file {file_number} not defined for read {self.name}")
-        
-        out_file = self.out_files[file_idx]
-        
-        if data_row:
-            out_file.write(data_row + '\n')
 
     
-    def write(self, file_number=1, header_data, seq=None, sep=None, qual=None):
-        """Smart write method that determines file type and writes accordingly"""
+    def write(self, file_numbers, header_data, seq=None, sep=None, qual=None):
+        """Write FASTQ records to specified output file numbers"""
         if not self.out_files:
             return
             
-        # Convert to 0-indexed
-        file_idx = file_number - 1
-        
-        if file_idx >= len(self.out_files):
-            raise ValueError(f"Output file {file_number} not defined for read {self.name}")
-        
-        out_file = self.out_files[file_idx]
-        out_path = self.out_paths[file_idx]
-        
         # Use defaults if not provided
         if seq is None:
             seq = self.seq
@@ -313,24 +258,28 @@ class Read:
         if qual is None:
             qual = self.qual
         
-        # Determine file type from extension
-        if out_path.lower().endswith(('.fastq', '.fastq.gz', '.fq', '.fq.gz')):
-            # FASTQ format - construct header with @ and identifier            identifier = self.head.split(' ')[0][1:]  # Extract identifier from original header
-            identifier = self.head.split(' ')[0][1:]
-            fastq_header = '@' + header_data + ',' + identifier
-
+        # Extract identifier from original header
+        identifier = self.head.split(' ')[0][1:]
+        fastq_header = '@' + header_data + ',' + identifier
+        
+        # Write to all specified file numbers
+        for file_number in file_numbers:
+            # Convert to 0-indexed
+            file_idx = file_number - 1
+            
+            if file_idx >= len(self.out_files):
+                raise ValueError(f"Output file {file_number} not defined for read {self.name}")
+            
+            out_file = self.out_files[file_idx]
+            
+            # Write FASTQ record
             out_file.write(fastq_header + '\n')
             out_file.write(seq + '\n')
             out_file.write(sep + '\n')
             out_file.write(qual + '\n')
-            
-        elif out_path.lower().endswith(('.csv', '.tsv', '.txt')):
-            out_file.write(header_data + '\n')
-        else:
-            raise ValueError("Invalid file type: %s" % out_path)
     
 class Barcode:
-    def __init__(self, seq='', plate='', well='', condition='', read_type='', gene='', next_commands=[], output_file_number=''):
+    def __init__(self, seq='', plate='', well='', condition='', read_type='', gene='', next_commands=[], output_files=''):
         self.seq = seq # full sequence, including part that is not used
         self.plate = plate
         self.well = well
@@ -338,8 +287,13 @@ class Barcode:
         self.read_type = read_type
         self.gene = gene
         self.next_commands = next_commands
-        self.output_file_number = output_file_number
         self.length = len(seq)
+        
+        # Parse output files as semicolon-separated set
+        if output_files:
+            self.output_targets = {target.strip() for target in output_files.split(';') if target.strip()}
+        else:
+            self.output_targets = set()
         
 class BarcodePos:
     def __init__(self, bar_list, length_to_use, plate_list, corr_dist, orientation, correct_snps, correct_indels):
@@ -477,7 +431,7 @@ def makeBarDict(barcode_folder, debug_mode=False):
             bar_dict[name] = BarcodePos(bar_list, length_to_use, plate_list, corr_dist, orientation, correct_snps, correct_indels)
     return bar_dict
 
-def makeReadDict(barcode_folder, input_folder, output_folder):
+def makeReadDict(sample, barcode_folder, input_folder, output_folder, debug_mode=False):
     # Get read information
     read_dict = {}
     reads_to_align = []
@@ -517,7 +471,7 @@ def makeReadDict(barcode_folder, input_folder, output_folder):
             if min_length:
                 min_length = int(min_length)
                 
-            read = Read(name, commands, in_pattern, out_patterns, trim_partner, trim_partner_len, min_length)
+            read = Read(name, sample, commands, in_pattern, out_patterns, trim_partner, trim_partner_len, min_length, debug_mode)
             read_dict[name] = read
     
     # Write out read pattern file
@@ -527,21 +481,22 @@ def makeReadDict(barcode_folder, input_folder, output_folder):
 
     return read_dict
             
-def barcodeReadsSample(sample, barcode_folder, input_folder, output_folder, debug_mode=False):
+
+def barcodeReadsSample(sample, barcode_folder, input_folder, output_folder, default_write_setting="1;csv", debug_mode=False):
     
     # Make dictionaries (temporary until I can fix the multiprocessing issue)
-    read_dict = makeReadDict(barcode_folder, input_folder, output_folder)
+    read_dict = makeReadDict(sample, barcode_folder, input_folder, output_folder, debug_mode)
     for key, read in read_dict.items():
         if debug_mode:
             print("Read name: %s. Commands: %s" % (key, read.commands))
     
-        
-        
+
     bar_pos_dict = makeBarDict(barcode_folder, debug_mode)
     for key, bar_pos in bar_pos_dict.items():
         if debug_mode:
             print("Barcode name: %s. Length: %s. Plates: %s. Orientation: %s" % (key, bar_pos.length, bar_pos.plate_list, bar_pos.orientation))                                                                  
             print("Barcode matches:", ", ".join([bar.seq for bar in bar_pos.bar_dict.values()]))
+            
     # Read in barcodes in the correct order
     ordered_bar_list = []
     with open(os.path.join(barcode_folder, 'sheet_names.txt'), 'rt') as f:
@@ -554,10 +509,20 @@ def barcodeReadsSample(sample, barcode_folder, input_folder, output_folder, debu
     # Run through files
     reads = list(read_dict.values())
     
+    # Set up CSV file
+    csv_file_path = os.path.join(output_folder, f"{sample}_output.csv")
+    csv_file = open(csv_file_path, 'wt')
+    
     with ExitStack() as stack:
+        # Add output files to context stack
+        stack.enter_context(csv_file)
         for read in reads:
-            read.assignSample(sample, debug_mode)
             stack.enter_context(read)
+        
+        # Write CSV header
+        read_names = [read.name for read in reads]
+        csv_header = 'wells_conditions,UMI,read_types,' + ','.join(read_names)
+        csv_file.write(csv_header + '\n')
             
         # Move to next read in each file
         i = 0
@@ -600,21 +565,28 @@ def barcodeReadsSample(sample, barcode_folder, input_folder, output_folder, debu
             if read_bad:
                 continue
             
-            # Determine output file number from barcodes
-            output_file_numbers = set()
+            # Determine output targets from barcodes using set union
+            all_output_targets = set()
             for bar in cur_bars.values():
-                if bar.output_file_number:  # If not empty
-                    try:
-                        output_file_numbers.add(int(bar.output_file_number))
-                    except ValueError:
-                        raise ValueError(f"Invalid output file number '{bar.output_file_number}' for barcode {bar.seq}")
-                if len(output_file_numbers) > 1:
-                    raise ValueError(f"Multiple different output file numbers specified: {output_file_numbers}")
-                    
-            if len(output_file_numbers) == 1:
-                output_file_num = output_file_numbers.pop()
-            else:
-                output_file_num = 1
+                all_output_targets |= bar.output_targets  # Set union
+            
+            # If no barcode specifies outputs, use default
+            if not all_output_targets:
+                default_targets = [target.strip() for target in default_write_setting.split(';') if target.strip()]
+                all_output_targets = set(default_targets)
+            
+            # Separate FASTQ file numbers from CSV using set operations
+            write_to_csv = 'csv' in {target.lower() for target in all_output_targets}
+            
+            # Get numeric targets only
+            numeric_targets = all_output_targets - {'csv', 'CSV'}  # Remove csv variants
+            fastq_file_numbers = []
+            
+            for target in numeric_targets:
+                try:
+                    fastq_file_numbers.append(int(target))
+                except ValueError:
+                    raise ValueError(f"Invalid output target '{target}'. Must be a number or 'csv'.")
             
             # Construct header from barcodes and UMIs
             cur_bars_ordered = list(cur_bars.values()) # Dictionaries are ordered in Python 3.7+
@@ -623,14 +595,24 @@ def barcodeReadsSample(sample, barcode_folder, input_folder, output_folder, debu
             wells_conditions = '&'.join((plate_wells, conditions))
             read_types = ';'.join([bar.read_type for bar in cur_bars_ordered])
             
-            # Write reads to their output files
+            # Construct header data
             header_data = ','.join((wells_conditions,UMI,read_types))
-            for read in reads:
-                if read.out_files:  # Only write if there are output files
-                    read.write(output_file_num, header_data=header_data)
+            
+            # Write to FASTQ files
+            if fastq_file_numbers:
+                for read in reads:
+                    if read.out_files:  # Only write if there are output files
+                        read.write(fastq_file_numbers, header_data=header_data)
+            
+            # Write to CSV file
+            if write_to_csv:
+                # Add read sequences to the CSV row
+                read_sequences = [read.seq for read in reads]
+                csv_row = header_data + ',' + ','.join(read_sequences)
+                csv_file.write(csv_row + '\n')
         
     
-def barcodeReadsMulti(input_folder, output_folder, barcode_folder, cores, debug_mode=False):
+def barcodeReadsMulti(input_folder, output_folder, barcode_folder, cores, default_write_setting="1;csv", debug_mode=False):
     #read_dict = makeReadDict(barcode_folder, input_folder, output_folder)
     #barcode_dict = makeBarDict(barcode_folder)
     
@@ -641,19 +623,13 @@ def barcodeReadsMulti(input_folder, output_folder, barcode_folder, cores, debug_
             sample_list.append(line.strip().split(',')[0])
             
     p = Pool(processes = int(cores))
-    func = partial(barcodeReadsSample, barcode_folder=barcode_folder, input_folder=input_folder, output_folder=output_folder, debug_mode=debug_mode)
+    func = partial(barcodeReadsSample, barcode_folder=barcode_folder, input_folder=input_folder, output_folder=output_folder, default_write_setting=default_write_setting, debug_mode=debug_mode)
     result = p.map(func, sample_list)
     p.close()
     p.join()
                 
 
 if __name__ == '__main__':
-    #input_folder = sys.argv[1]
-    #output_folder = sys.argv[2]
-    #barcode_folder = sys.argv[3]
-    #gene_output_folder = sys.argv[4]
-    #cores = sys.argv[5]
-    
     fire.Fire(barcodeReadsMulti)
     
     
