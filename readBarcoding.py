@@ -110,11 +110,11 @@ def revComp(seq, comp_dict={'A':'T','G':'C','C':'G','T':'A','N':'N'}):
 
 
 class Read:
-    def __init__(self, name, commands, in_pattern, out_pattern=None, trim_partner=None, trim_partner_len=17, min_length=20):
+    def __init__(self, name, commands, in_pattern, out_patterns=None, trim_partner=None, trim_partner_len=17, min_length=20):
         self.name = name
         self.commands = commands
         self.in_pattern = in_pattern
-        self.out_pattern = out_pattern
+        self.out_patterns = out_patterns or []  # List of output file patterns
         self.trim_partner = trim_partner # should be in order of position
         self.trim_partner_len = trim_partner_len
         self.sample = None
@@ -122,11 +122,13 @@ class Read:
         
         # Paths are assigned through assignSample
         self.in_path = None
-        self.out_path = None
+        self.out_paths = []  # List of actual output file paths
+        self.out_files = []  # List of open file handles
+        
        
     
-    def assignSample(self, sample, output_full): # assigns the sample name, updating input and output paths
-        if output_full:
+    def assignSample(self, sample, debug_mode): # assigns the sample name, updating input and output paths                                                                                                       
+        if debug_mode:
             print("Input pattern: %s. Sample: %s" % (self.in_pattern, sample))
             
         self.sample = sample
@@ -136,8 +138,11 @@ class Read:
         else:
             raise ValueError("%s not found" % self.in_pattern.replace("{SAMPLE}", sample))
             
-        if self.out_pattern:
-            self.out_path = self.out_pattern.replace("{SAMPLE}", sample)
+        # Assign multiple output file paths
+        self.out_paths = []
+        for pattern in self.out_patterns:
+            if pattern:  # Skip empty patterns
+                self.out_paths.append(pattern.replace("{SAMPLE}", sample))
             
     
     def __enter__(self):
@@ -147,17 +152,20 @@ class Read:
             self.input = open(self.in_path, 'rt')
         self.head = 'placeholder' # required to start the while loop
         
-        if self.out_path:
-            if self.out_path.endswith('.gz'):
-                self.out = gzip.open(self.out_path, 'wt')
+        # Open all output files
+        self.out_files = []
+        for out_path in self.out_paths:
+            if out_path.endswith('.gz'):
+                self.out_files.append(gzip.open(out_path, 'wt'))
             else:
-                self.out = open(self.out_path, 'wt')
+                self.out_files.append(open(out_path, 'wt'))
     
     def __exit__(self, exc_type, exc_value, exc_traceback):
         self.input.close()
         
-        if self.out_path:
-            self.out.close()
+        # Close all output files
+        for out_file in self.out_files:
+            out_file.close()
     
     def nextRead(self):
         # Read in data from file
@@ -166,7 +174,7 @@ class Read:
         self.sep = self.input.readline().rstrip()
         self.qual = self.input.readline().rstrip()
         
-    def getBarcodes(self, barcode_dict, output_full=False):
+    def getBarcodes(self, barcode_dict, debug_mode=False):
             
         start = 0
         cur_bars = {}
@@ -200,15 +208,17 @@ class Read:
                 
             elif command_name == 'Trim':
                 trim_pos = start
+                
     
             elif command_name.startswith('Bar:'): # a barcode
                 bar_name = command_name[4:]
                 bar_pos = barcode_dict[bar_name]
-                bar = bar_pos.getBar(self.seq[start:start+bar_pos.length])
+                potential_bar_seq = self.seq[start:start+bar_pos.length]
+                bar = bar_pos.getBar(potential_bar_seq)
                 
                 if not bar:
-                    if output_full:
-                        print("No match for %s. Start: %d. File: %s. Read sequence: %s" % (bar_name, start, self.in_path, self.seq))
+                    if debug_mode:
+                        print("No match for %s. Start: %d. File: %s. Read sequence: %s. Test sequence: %s" % (bar_name, start, self.in_path, self.seq, potential_bar_seq))
                     return False
                 
                 #print("Bar name: %s. Bar sequence: %s. Read bar sequence: %s. Length: %d" % (bar_name, bar.seq, self.seq[start:start+bar_pos.length], bar.length))
@@ -222,7 +232,7 @@ class Read:
                 raise ValueError("Command not found: %s. Valid commands: Goto:<pos>, Gap:<len>, UMI:<len>, Trim, Bar:<name>" % command_name)
                 
         self.bar_seq = self.seq[:start] # used for trimming partner
-        if output_full:
+        if debug_mode:
             print("All barcodes found! Read: %s, Barcodes: %s\n" % (self.name, str([bar.seq for bar in cur_bars.values()])))
         self.seq = self.seq[trim_pos:]
         self.qual = self.qual[trim_pos:]
@@ -240,17 +250,87 @@ class Read:
             self.qual = self.qual[:search_seq_pos]
         
         return True
+    
+    def write_fastq(self, file_number=1, head=None, seq=None, sep=None, qual=None):
+        """Write a FASTQ record to the specified output file"""
+        
+        # Convert to 0-indexed
+        file_idx = file_number - 1
+        
+        if file_idx >= len(self.out_files):
+            raise ValueError(f"Output file {file_number} not defined for read {self.name}")
+        
+        out_file = self.out_files[file_idx]
+        
+        if head is None:
+            head = self.head
+        if seq is None:
+            seq = self.seq
+        if sep is None:
+            sep = self.sep
+        if qual is None:
+            qual = self.qual
+            
+        out_file.write(head + '\n')
+        out_file.write(seq + '\n')
+        out_file.write(sep + '\n')
+        out_file.write(qual + '\n')
+    
+    def write_csv(self, file_number=1, data_row=None):
+        """Write a CSV row to the specified output file"""
+            
+        # Convert to 0-indexed
+        file_idx = file_number - 1
+        
+        if file_idx >= len(self.out_files):
+            raise ValueError(f"Output file {file_number} not defined for read {self.name}")
+        
+        out_file = self.out_files[file_idx]
+        
+        if data_row:
+            out_file.write(data_row + '\n')
 
     
-    def write(self, head=None, seq=None, sep=None, qual=None):
-        if self.out_path:
-            self.out.write((head or self.head) + "\n")
-            self.out.write((seq or self.seq) + "\n")
-            self.out.write((sep or self.sep) + "\n")
-            self.out.write((qual or self.qual) + "\n")
+    def write(self, file_number=1, header_data, seq=None, sep=None, qual=None):
+        """Smart write method that determines file type and writes accordingly"""
+        if not self.out_files:
+            return
+            
+        # Convert to 0-indexed
+        file_idx = file_number - 1
+        
+        if file_idx >= len(self.out_files):
+            raise ValueError(f"Output file {file_number} not defined for read {self.name}")
+        
+        out_file = self.out_files[file_idx]
+        out_path = self.out_paths[file_idx]
+        
+        # Use defaults if not provided
+        if seq is None:
+            seq = self.seq
+        if sep is None:
+            sep = self.sep
+        if qual is None:
+            qual = self.qual
+        
+        # Determine file type from extension
+        if out_path.lower().endswith(('.fastq', '.fastq.gz', '.fq', '.fq.gz')):
+            # FASTQ format - construct header with @ and identifier            identifier = self.head.split(' ')[0][1:]  # Extract identifier from original header
+            identifier = self.head.split(' ')[0][1:]
+            fastq_header = '@' + header_data + ',' + identifier
+
+            out_file.write(fastq_header + '\n')
+            out_file.write(seq + '\n')
+            out_file.write(sep + '\n')
+            out_file.write(qual + '\n')
+            
+        elif out_path.lower().endswith(('.csv', '.tsv', '.txt')):
+            out_file.write(header_data + '\n')
+        else:
+            raise ValueError("Invalid file type: %s" % out_path)
     
 class Barcode:
-    def __init__(self, seq='', plate='', well='', condition='', read_type='', gene='', next_commands=[]):
+    def __init__(self, seq='', plate='', well='', condition='', read_type='', gene='', next_commands=[], output_file_number=''):
         self.seq = seq # full sequence, including part that is not used
         self.plate = plate
         self.well = well
@@ -258,6 +338,7 @@ class Barcode:
         self.read_type = read_type
         self.gene = gene
         self.next_commands = next_commands
+        self.output_file_number = output_file_number
         self.length = len(seq)
         
 class BarcodePos:
@@ -325,7 +406,7 @@ class BarcodePos:
         return self.corr_dict[bar_seq]
 
     
-def makeBarDict(barcode_folder, output_full=False):
+def makeBarDict(barcode_folder, debug_mode=False):
     bar_dict = {}
     for bar_file in os.listdir(barcode_folder):
         if bar_file.endswith('.csv') and bar_file.startswith('Barcode-'):
@@ -361,7 +442,7 @@ def makeBarDict(barcode_folder, output_full=False):
                 else:
                     correct_indels = False
                     
-                if output_full:
+                if debug_mode:
                     print("Corr dist: %d" % corr_dist)
                 orientation = f.readline().split(',')[1].strip()
                 f.readline()
@@ -369,7 +450,18 @@ def makeBarDict(barcode_folder, output_full=False):
                 
                 bar_list = []
                 for line in f:
-                    seq, plate, well, condition, read_type, gene, next_command_string = line.strip().split(',')[:7]
+                    parts = line.strip().split(',')
+                    if len(parts) < 7:
+                        continue
+                    
+                    seq = parts[0] if len(parts) > 0 else ''
+                    plate = parts[1] if len(parts) > 1 else ''
+                    well = parts[2] if len(parts) > 2 else ''
+                    condition = parts[3] if len(parts) > 3 else ''
+                    read_type = parts[4] if len(parts) > 4 else ''
+                    gene = parts[5] if len(parts) > 5 else ''
+                    next_command_string = parts[6] if len(parts) > 6 else ''
+                    output_file_number = parts[7] if len(parts) > 7 else ''
                     
                     if not seq: # blank line at end of file
                         break
@@ -378,9 +470,11 @@ def makeBarDict(barcode_folder, output_full=False):
                         next_commands = next_command_string.split(';')
                     else:
                         next_commands = None
-                    bar_list.append(Barcode(seq, plate, well, condition, read_type, gene, next_commands))
-                    
-            bar_dict[name] = BarcodePos(bar_list, length_to_use, plate_list, corr_dist, orientation, correct_snps, correct_indels) 
+                    bar_list.append(Barcode(seq, plate, well, condition, read_type, gene, next_commands, output_file_number))                                                                                                        
+            
+            if debug_mode:
+                print("%d barcodes found for %s" % (len(bar_list), name))
+            bar_dict[name] = BarcodePos(bar_list, length_to_use, plate_list, corr_dist, orientation, correct_snps, correct_indels)
     return bar_dict
 
 def makeReadDict(barcode_folder, input_folder, output_folder):
@@ -392,15 +486,27 @@ def makeReadDict(barcode_folder, input_folder, output_folder):
 
         # Iterate through reads
         for line in f:
-            name, in_file_pattern, out_file_pattern, command_str, trim_partner_str, min_length = line.strip().split(',')
-            in_pattern = os.path.join(input_folder, in_file_pattern)
-            if out_file_pattern:
-                out_pattern = os.path.join(output_folder, out_file_pattern)
-                reads_to_align.append(out_file_pattern)
-            else:
-                out_pattern = None
+            parts = line.strip().split(',')
+            name = parts[0]
+            in_file_pattern = parts[1]
+            command_str = parts[2]
+            trim_partner_str = parts[3] if len(parts) > 3 else ""
+            min_length = parts[4] if len(parts) > 4 else ""
             
-            commands = command_str.strip().split(';')
+            # All remaining parts are output file patterns (moved to the end)
+            out_file_patterns = parts[5:] if len(parts) > 5 else []
+            
+            in_pattern = os.path.join(input_folder, in_file_pattern)
+            
+            # Process output patterns and add to reads_to_align
+            out_patterns = []
+            for pattern in out_file_patterns:
+                if pattern:  # Skip empty patterns
+                    out_pattern = os.path.join(output_folder, pattern)
+                    out_patterns.append(out_pattern)
+                    reads_to_align.append(pattern)
+            
+            commands = command_str.strip().split(';') if command_str else []
             if trim_partner_str:
                 trim_partner, trim_partner_len = trim_partner_str.strip().split(':')
                 trim_partner_len = int(trim_partner_len)
@@ -411,7 +517,7 @@ def makeReadDict(barcode_folder, input_folder, output_folder):
             if min_length:
                 min_length = int(min_length)
                 
-            read = Read(name, commands, in_pattern, out_pattern, trim_partner, trim_partner_len, min_length)
+            read = Read(name, commands, in_pattern, out_patterns, trim_partner, trim_partner_len, min_length)
             read_dict[name] = read
     
     # Write out read pattern file
@@ -421,119 +527,110 @@ def makeReadDict(barcode_folder, input_folder, output_folder):
 
     return read_dict
             
-def barcodeReadsSample(sample, barcode_folder, input_folder, output_folder, gene_output_folder, output_full=False):
+def barcodeReadsSample(sample, barcode_folder, input_folder, output_folder, debug_mode=False):
     
     # Make dictionaries (temporary until I can fix the multiprocessing issue)
     read_dict = makeReadDict(barcode_folder, input_folder, output_folder)
     for key, read in read_dict.items():
-        if output_full:
+        if debug_mode:
             print("Read name: %s. Commands: %s" % (key, read.commands))
     
         
         
-    barcode_dict = makeBarDict(barcode_folder, output_full)
-    for key, bar in barcode_dict.items():
-        if output_full:
-            print("Barcode name: %s. Length: %s. Plates: %s. Orientation: %s" % (key, bar.length, bar.plate_list, bar.orientation))
-            
-        if key == 'SSSprimer' or key == 'Gene':
-            if output_full:
-                print("Corr dict: %s" % bar.corr_dict)
+    bar_pos_dict = makeBarDict(barcode_folder, debug_mode)
+    for key, bar_pos in bar_pos_dict.items():
+        if debug_mode:
+            print("Barcode name: %s. Length: %s. Plates: %s. Orientation: %s" % (key, bar_pos.length, bar_pos.plate_list, bar_pos.orientation))                                                                  
+            print("Barcode matches:", ", ".join([bar.seq for bar in bar_pos.bar_dict.values()]))
     # Read in barcodes in the correct order
     ordered_bar_list = []
     with open(os.path.join(barcode_folder, 'sheet_names.txt'), 'rt') as f:
         sheets = f.readline().strip().split(',')
         ordered_bar_list = [sheet.split('-')[1] for sheet in sheets if sheet.startswith('Barcode-')]
-        if output_full:
+        if debug_mode:
             print("Ordered bar list:")
             print(ordered_bar_list)
  
     # Run through files
     reads = list(read_dict.values())
-    gene_assigned_file = os.path.join(gene_output_folder, "%s.csv" % sample)
-    #genes_assigned = Counter()
-    with open(gene_assigned_file, 'wt') as f_gene:
-        with ExitStack() as stack:
-            for read in reads:
-                read.assignSample(sample, output_full)
-                stack.enter_context(read)
+    
+    with ExitStack() as stack:
+        for read in reads:
+            read.assignSample(sample, debug_mode)
+            stack.enter_context(read)
             
-            # Move to next read in each file
-            while reads[0].head:
-            #for i in range(1000):
-                for read in reads:
-                    read.nextRead()
+        # Move to next read in each file
+        i = 0
+        while reads[0].head and (not debug_mode or i < 100):
+            i += 1
+            for read in reads:
+                read.nextRead()
+            
+            # Get barcodes and UMIs
+            cur_bars = {bar_name:Barcode() for bar_name in ordered_bar_list}
+            UMI = ""
+            read_bad=False
+            
+            for read in reads:
+                read_output = read.getBarcodes(bar_pos_dict, debug_mode)
+                if read_output == False:
+                    read_bad = True
+                    break
+                else:
+                    read_UMI, read_bars = read_output
                 
-                # Get barcodes and UMIs
-                cur_bars = {bar_name:Barcode() for bar_name in ordered_bar_list}
-                UMI = ""
-                read_bad=False
+                for name, bar in read_bars.items():
+                    cur_bars[name] = bar
+                    #print("Barcode found! Name: %s. Plate: %s Well: %s. Condition: %s. Read type: %s" % (name, bar.plate, bar.well, bar.condition, bar.read_type))
+                UMI += read_UMI
+            
+            # If any of the reads didn't work out: continue to next line
+            if read_bad:
+                continue
                 
-                for read in reads:
-                    read_output = read.getBarcodes(barcode_dict, output_full)
-                    if read_output == False:
+            # Trim reads with reverse complement
+            for read in reads:
+                if read.trim_partner:
+                    partner_seq = read_dict[read.trim_partner].bar_seq
+                    read.trimRevComp(partner_seq)
+                    if len(read.seq) < read.min_length:
                         read_bad = True
                         break
-                    else:
-                        read_UMI, read_bars = read_output
+                        
+            if read_bad:
+                continue
+            
+            # Determine output file number from barcodes
+            output_file_numbers = set()
+            for bar in cur_bars.values():
+                if bar.output_file_number:  # If not empty
+                    try:
+                        output_file_numbers.add(int(bar.output_file_number))
+                    except ValueError:
+                        raise ValueError(f"Invalid output file number '{bar.output_file_number}' for barcode {bar.seq}")
+                if len(output_file_numbers) > 1:
+                    raise ValueError(f"Multiple different output file numbers specified: {output_file_numbers}")
                     
-                    for name, bar in read_bars.items():
-                        cur_bars[name] = bar
-                        #print("Barcode found! Name: %s. Plate: %s Well: %s. Condition: %s. Read type: %s" % (name, bar.plate, bar.well, bar.condition, bar.read_type))
-                    UMI += read_UMI
-                
-                # If any of the reads didn't work out: continue to next line
-                if read_bad:
-                    continue
-                
-                # Trim reads with reverse complement
-                for read in reads:
-                    if read.trim_partner:
-                        partner_seq = read_dict[read.trim_partner].bar_seq
-                        read.trimRevComp(partner_seq)
-                        if len(read.seq) < read.min_length:
-                            read_bad = True
-                            break
-                            
-                if read_bad:
-                    continue
-                
-                # Construct header from barcodes and UMIs
-                cur_bars_ordered = [cur_bars[bar_name] for bar_name in ordered_bar_list] # probably not necessary now that dictionaries are ordered in Python 3.7+
-                plate_wells = ';'.join(["%s-%s" % (bar.plate, bar.well) for bar in cur_bars_ordered])
-                conditions = ';'.join([bar.condition for bar in cur_bars_ordered])
-                wells_conditions = '&'.join((plate_wells, conditions))
-                read_types = ';'.join([bar.read_type for bar in cur_bars_ordered])
-                genes = ';'.join([bar.gene for bar in cur_bars_ordered if bar.gene])
-                
-                
-                # Write out aligned reads to aligned read file
-                if genes:
-                    #print("Genes found! Genes: %s" % genes)
-                    f_gene.write(','.join((wells_conditions,UMI,read_types,genes)) + '\n')
-                    #genes_assigned[(wells_conditions,UMI,read_types,genes)] += 1
-                    #print(genes_assigned)
-                    #print("Counter sum: %s" % sum(genes_assigned.values()))
-                    
-                
-                # Write out reads to files
-                else:
-                    #print("No genes found! Genes: %s" % genes)
-                    new_header = '@' + ','.join((wells_conditions,UMI,read_types))
-                    for read in reads:
-                        identifier = read.head.split(' ')[0][1:]
-                        read.write(head=','.join((new_header, identifier)))
-                
-    # Write out gene assigned file
-    #with open(gene_assigned_file, 'wt') as f:
-    #    print("Genes assigned length: %s" % len(genes_assigned))
-    #    for unique_read, num_dups in genes_assigned.items():
-    #        #print(unique_read)
-    #        read_str = ','.join(unique_read)
-    #        f.write(','.join((read_str, str(num_dups))) + '\n')
+            if len(output_file_numbers) == 1:
+                output_file_num = output_file_numbers.pop()
+            else:
+                output_file_num = 1
+            
+            # Construct header from barcodes and UMIs
+            cur_bars_ordered = list(cur_bars.values()) # Dictionaries are ordered in Python 3.7+
+            plate_wells = ';'.join(["%s-%s" % (bar.plate, bar.well) for bar in cur_bars_ordered])
+            conditions = ';'.join([bar.condition for bar in cur_bars_ordered])
+            wells_conditions = '&'.join((plate_wells, conditions))
+            read_types = ';'.join([bar.read_type for bar in cur_bars_ordered])
+            
+            # Write reads to their output files
+            header_data = ','.join((wells_conditions,UMI,read_types))
+            for read in reads:
+                if read.out_files:  # Only write if there are output files
+                    read.write(output_file_num, header_data=header_data)
         
     
-def barcodeReadsMulti(input_folder, output_folder, barcode_folder, gene_output_folder, cores, output_full=False):
+def barcodeReadsMulti(input_folder, output_folder, barcode_folder, cores, debug_mode=False):
     #read_dict = makeReadDict(barcode_folder, input_folder, output_folder)
     #barcode_dict = makeBarDict(barcode_folder)
     
@@ -544,7 +641,7 @@ def barcodeReadsMulti(input_folder, output_folder, barcode_folder, gene_output_f
             sample_list.append(line.strip().split(',')[0])
             
     p = Pool(processes = int(cores))
-    func = partial(barcodeReadsSample, barcode_folder=barcode_folder, input_folder=input_folder, output_folder=output_folder, gene_output_folder=gene_output_folder, output_full=output_full)
+    func = partial(barcodeReadsSample, barcode_folder=barcode_folder, input_folder=input_folder, output_folder=output_folder, debug_mode=debug_mode)
     result = p.map(func, sample_list)
     p.close()
     p.join()

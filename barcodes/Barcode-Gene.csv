@@ -3,7 +3,7 @@ Plates to use,all,,,,,
 Correction distance,0,,,,,
 Orientation,forward,,,,,
 ,,,,,,
-Barcode,Plate,Well,Condition,Read Type,Gene,Next Commands
+Barcode,Plate,Well,Condition,Read Type,Gene,Next Commands,Output File Number
 GTCCTGG,,,,TP53_WT,TP53,
 GTTCTGG,,,,TP53_MUT,TP53,
 GTCTTGG,,,,TP53_NEGCTRL,TP53,
