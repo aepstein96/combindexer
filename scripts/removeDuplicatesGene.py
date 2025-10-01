@@ -24,7 +24,7 @@ def removeDuplicates(sample, in_folder, out_folder):
             cell, umi, read_type = line[:3]
             #print("UMI: %s. Length: %d" % (umi, len(umi)))
             
-            if umi != cur_umi or or cell != cur_cell or read_type != cur_read_type:
+            if umi != cur_umi or cell != cur_cell or read_type != cur_read_type:
                 list_to_join = [cur_cell, cur_umi, cur_read_type, str(cur_umi_count)] + line[3:]
                 umi_counts.write(','.join(list_to_join) + '\n')
                 cur_umi_count = 1
