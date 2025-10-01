@@ -279,13 +279,12 @@ class Read:
             out_file.write(qual + '\n')
     
 class Barcode:
-    def __init__(self, seq='', plate='', well='', condition='', read_type='', gene='', next_commands=[], output_files=''):
+    def __init__(self, seq='', plate='', well='', condition='', read_type='', next_commands=[], output_files=''):
         self.seq = seq # full sequence, including part that is not used
         self.plate = plate
         self.well = well
         self.condition = condition
         self.read_type = read_type
-        self.gene = gene
         self.next_commands = next_commands
         self.length = len(seq)
         
@@ -296,7 +295,7 @@ class Barcode:
             self.output_targets = set()
         
 class BarcodePos:
-    def __init__(self, bar_list, length_to_use, plate_list, corr_dist, orientation, correct_snps, correct_indels):
+    def __init__(self, bar_list, length_to_use, plate_list, corr_dist, orientation, correct_snps, correct_indels, debug_mode=False):
         
         # Get length of shortest barcode, this is what will be used for disambiguation
         # Also see if there is a default for "No match"
@@ -335,31 +334,45 @@ class BarcodePos:
             
             post_context = seq[min_length:]
             bar_seq = seq[:min_length]
-            
+
+                
             variants_map = getCombinedVariants(bar_seq, corr_dist, post_context, correct_snps, correct_indels)
             for var_seq, (_, dist) in variants_map.items():
                 potential_corrections[var_seq].append((bar, dist))
 
         self.corr_dict = defaultdict(lambda: self.no_match)
         for var_seq, candidates in potential_corrections.items():
-            if len(candidates) == 1:
-                self.corr_dict[var_seq] = candidates[0][0]
-                continue
-
-            min_dist = min(c[1] for c in candidates)
-            best_matches = [c[0] for c in candidates if c[1] == min_dist]
-
-            if len(best_matches) == 1:
-                self.corr_dict[var_seq] = best_matches[0]
-            elif self.ambiguous:
-                self.corr_dict[var_seq] = self.ambiguous
+            correct_bar = findCorrectBarcode(var_seq, candidates)
+            if correct_bar:
+                if debug_mode:
+                    print("Var seq: %s. Correct bar: %s" % (var_seq, correct_bar.seq))
+                self.corr_dict[var_seq] = correct_bar
+            else:
+                if debug_mode:
+                    print("Var seq: %s. No correct bar found" % var_seq)
+                    
+                if self.ambiguous:
+                    self.corr_dict[var_seq] = self.ambiguous
                         
     
     # Returns barcode information
     def getBar(self, bar_seq):
         return self.corr_dict[bar_seq]
 
+
+def findCorrectBarcode(var_seq, candidates):
+    if len(candidates) == 1:
+        return candidates[0][0]
+
+    min_dist = min(c[1] for c in candidates)
+    best_matches = [c[0] for c in candidates if c[1] == min_dist]
+
+    if len(best_matches) == 1:
+        return best_matches[0]
     
+    return False
+
+
 def makeBarDict(barcode_folder, debug_mode=False):
     bar_dict = {}
     for bar_file in os.listdir(barcode_folder):
@@ -396,8 +409,6 @@ def makeBarDict(barcode_folder, debug_mode=False):
                 else:
                     correct_indels = False
                     
-                if debug_mode:
-                    print("Corr dist: %d" % corr_dist)
                 orientation = f.readline().split(',')[1].strip()
                 f.readline()
                 f.readline()
@@ -405,30 +416,26 @@ def makeBarDict(barcode_folder, debug_mode=False):
                 bar_list = []
                 for line in f:
                     parts = line.strip().split(',')
-                    if len(parts) < 7:
+                    if len(parts) < 3:
                         continue
                     
-                    seq = parts[0] if len(parts) > 0 else ''
-                    plate = parts[1] if len(parts) > 1 else ''
-                    well = parts[2] if len(parts) > 2 else ''
+                    seq = parts[0]
+                    plate = parts[1]
+                    well = parts[2]
                     condition = parts[3] if len(parts) > 3 else ''
                     read_type = parts[4] if len(parts) > 4 else ''
-                    gene = parts[5] if len(parts) > 5 else ''
-                    next_command_string = parts[6] if len(parts) > 6 else ''
-                    output_file_number = parts[7] if len(parts) > 7 else ''
-                    
-                    if not seq: # blank line at end of file
-                        break
+                    next_command_string = parts[5] if len(parts) > 5 else ''
+                    output_files = parts[6] if len(parts) > 6 else ''
                     
                     if next_command_string:
                         next_commands = next_command_string.split(';')
                     else:
                         next_commands = None
-                    bar_list.append(Barcode(seq, plate, well, condition, read_type, gene, next_commands, output_file_number))                                                                                                        
+                    bar_list.append(Barcode(seq, plate, well, condition, read_type, next_commands, output_files))                                                                                                        
             
             if debug_mode:
                 print("%d barcodes found for %s" % (len(bar_list), name))
-            bar_dict[name] = BarcodePos(bar_list, length_to_use, plate_list, corr_dist, orientation, correct_snps, correct_indels)
+            bar_dict[name] = BarcodePos(bar_list, length_to_use, plate_list, corr_dist, orientation, correct_snps, correct_indels, debug_mode)
     return bar_dict
 
 def makeReadDict(sample, barcode_folder, input_folder, output_folder, debug_mode=False):
@@ -491,11 +498,7 @@ def barcodeReadsSample(sample, barcode_folder, input_folder, output_folder, defa
             print("Read name: %s. Commands: %s" % (key, read.commands))
     
 
-    bar_pos_dict = makeBarDict(barcode_folder, debug_mode)
-    for key, bar_pos in bar_pos_dict.items():
-        if debug_mode:
-            print("Barcode name: %s. Length: %s. Plates: %s. Orientation: %s" % (key, bar_pos.length, bar_pos.plate_list, bar_pos.orientation))                                                                  
-            print("Barcode matches:", ", ".join([bar.seq for bar in bar_pos.bar_dict.values()]))
+    bar_pos_dict = makeBarDict(barcode_folder, debug_mode)                                                          
             
     # Read in barcodes in the correct order
     ordered_bar_list = []
