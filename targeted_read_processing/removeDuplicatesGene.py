@@ -12,34 +12,49 @@ def removeDuplicates(sample, in_folder, out_folder):
         
         line = f_in.readline().strip().split(',')
         if len(line) < 3:
+            print("WARNING: %s.csv has less than 3 columns. Skipping." % sample)
             return
         
         # Write initial header
         header = ['Cell','UMI','Read Type','Count'] + line[3:]
-        umi_counts.write(','.join(header) + '\n')
+        f_umi.write(','.join(header) + '\n')
         
+        # Move past header to first line
+        line = f_in.readline().strip().split(',')
         cur_cell, cur_umi, cur_read_type = line[:3]
+        cur_additional_cols = line[3:]
         cur_umi_count = 1
+        
+        # Move to second line and start processing
+        line = f_in.readline().strip().split(',')
         while len(line) >= 3:
+            
             cell, umi, read_type = line[:3]
             #print("UMI: %s. Length: %d" % (umi, len(umi)))
             
             if umi != cur_umi or cell != cur_cell or read_type != cur_read_type:
-                list_to_join = [cur_cell, cur_umi, cur_read_type, str(cur_umi_count)] + line[3:]
-                umi_counts.write(','.join(list_to_join) + '\n')
+                list_to_join = [cur_cell, cur_umi, cur_read_type, str(cur_umi_count)] + cur_additional_cols
+                f_umi.write(','.join(list_to_join) + '\n')
+                cur_cell, cur_umi, cur_read_type = cell, umi, read_type
+                cur_additional_cols = line[3:]
                 cur_umi_count = 1
                 
             else:
                 cur_umi_count += 1
                 
             line = f_in.readline().strip().split(',')
+        
+        # Write the final group
+        if cur_umi_count > 0:
+            list_to_join = [cur_cell, cur_umi, cur_read_type, str(cur_umi_count)] + cur_additional_cols
+            f_umi.write(','.join(list_to_join) + '\n')
                 
 
 def removeDuplicatesMulti(in_folder, out_folder, cores):
-    files = [os.path.splitext(f)[0] for f in os.listdir(in_folder)]
+    samples = [os.path.splitext(f)[0] for f in os.listdir(in_folder)]
     p = Pool(processes = int(cores))
     func = partial(removeDuplicates, in_folder=in_folder, out_folder=out_folder)
-    p.map(func, files)
+    p.map(func, samples)
     p.close()
     p.join()
                 

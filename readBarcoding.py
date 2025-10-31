@@ -173,7 +173,7 @@ class Read:
         cur_bars = {}
         UMI = ''
         
-        if not self.commands[0]: # this is what happens if that read has no barcodes in it
+        if not self.commands or not self.commands[0]: # this is what happens if that read has no barcodes in it
             self.bar_seq = ''
             return UMI, cur_bars
         
@@ -501,10 +501,19 @@ def barcodeReadsSample(sample, barcode_folder, input_folder, output_folder, defa
     bar_pos_dict = makeBarDict(barcode_folder, debug_mode)                                                          
             
     # Read in barcodes in the correct order
+    # Use provided order if it exists, otherwise use alphabetical order
+
     ordered_bar_list = []
-    with open(os.path.join(barcode_folder, 'sheet_names.txt'), 'rt') as f:
-        sheets = f.readline().strip().split(',')
-        ordered_bar_list = [sheet.split('-')[1] for sheet in sheets if sheet.startswith('Barcode-')]
+    if os.path.exists(os.path.join(barcode_folder, 'sheet_names.txt')):
+        with open(os.path.join(barcode_folder, 'sheet_names.txt'), 'rt') as f:
+            sheets = f.readline().strip().split(',')
+            ordered_bar_list = [sheet.split('-')[1] for sheet in sheets if sheet.startswith('Barcode-')]
+            if debug_mode:
+                print("Ordered bar list:")
+                print(ordered_bar_list)
+    else:
+        files = [f for f in os.listdir(barcode_folder) if f.startswith('Barcode-') and f.endswith('.csv')]
+        ordered_bar_list = sorted([f.split('-')[1].split('.')[0] for f in files])
         if debug_mode:
             print("Ordered bar list:")
             print(ordered_bar_list)
