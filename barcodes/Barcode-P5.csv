@@ -1,9 +1,11 @@
 Length to use,all,,,,,
 Plates to use,all,,,,,
 Correction distance,1,,,,,
+Correct SNPs,true,,,,,
+Correct indels,true,,,,,
 Orientation,reverse,,,,,
 ,,,,,,
-Barcode,Plate,Well,Condition,Read Type,Gene,Next Commands
+Barcode,Plate,Well,Condition,Read Type,Next Commands,Output File Number
 CCGCGGCTCA,1,A1,,,,
 GGCTCCTCGT,1,A2,,,,
 GTTACGCAAG,1,A3,,,,

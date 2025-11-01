@@ -1,7 +1,7 @@
 import os
 import glob
 import gzip
-import sys
+import fire
 
 def getReadNumbers(sample, input_folder, barcoded_folder, umis_folder):
     read_numbers = {'Raw': 0, 'Barcoded': 0, 'Assigned UMI': 0, 'Gene Identified': 0, 'Gene Identified (Unique >=1)': 0, 'Gene Identified (Unique >=2)': 0, 'Gene Identified (Unique >=3)': 0, 'Gene Identified (Unique >=4)': 0, 'Gene Identified (Unique >=5)': 0}
@@ -69,13 +69,7 @@ def getReadNumbers(sample, input_folder, barcoded_folder, umis_folder):
 
     return read_numbers
 
-if __name__ == "__main__":
-    sample = sys.argv[1]
-    input_folder = sys.argv[2]
-    barcoded_folder = sys.argv[3]
-    umis_folder = sys.argv[4]
-    output_file = sys.argv[5]
-    
+def main(sample, input_folder, barcoded_folder, umis_folder, output_file):does star
     print(f"Counting reads for {sample}...")
     read_numbers = getReadNumbers(sample, input_folder, barcoded_folder, umis_folder)
     with open(output_file, 'a') as f:
@@ -83,3 +77,6 @@ if __name__ == "__main__":
         for key in read_numbers:
             f.write(f",{read_numbers[key]}")
         f.write("\n")
+
+if __name__ == "__main__":
+    fire.Fire(main)

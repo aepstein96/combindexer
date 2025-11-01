@@ -1,2 +1,0 @@
-from readBarcoding_mod import barcodeReadsMulti
-

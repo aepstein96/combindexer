@@ -1,1 +1,0 @@
-Settings,Samples,Reads,Barcode-P5,Barcode-RT,Barcode-P7,Barcode-SSSprimer,Barcode-Gene,Barcode-RTPrimer
