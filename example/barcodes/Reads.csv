@@ -1,5 +1,5 @@
-Read,Input File,Commands,Trim Partner,Min Length,Output File 1,Output File 2,Output File 3
-R1,{SAMPLE}_*R1*.fastq.gz,UMI:8;Bar:RT,,,
-R2,{SAMPLE}_*R3*.fastq.gz,,,,{SAMPLE}.R2.fastq.gz,
-I5,{SAMPLE}_*R2*.fastq.gz,Bar:P5,,,
-I7,{SAMPLE}_*I1*.fastq.gz,Bar:P7,,,
+Read,Input File,Commands,Trim Partner,Min Length
+R1,{SAMPLE}_*R1*.fastq.gz,UMI:8;Bar:RT;Gap:30;Bar:RTPrimer,,
+R2,{SAMPLE}_*R3*.fastq.gz,Bar:SSSPrimer,,
+I5,{SAMPLE}_*R2*.fastq.gz,Bar:P5,,
+I7,{SAMPLE}_*I1*.fastq.gz,Bar:P7,,

@@ -1,0 +1,14 @@
+Length to use,10,,,,,
+Plates to use,all,,,,,
+Correction distance,1,,,,,
+Correct SNPs,true,,,,,
+Correct indels,true,,,,,
+Orientation,forward,,,,,
+,,,,,,
+Barcode,Plate,Well,Condition,Read Type,Next Commands,Output File Name(s)
+ATCCACTACAACTACATGTGTAA,,,,TP53_SSS,Gap:23;Bar:Gene
+GAGCGATTAAAGCCCTAATGAAAG,,,,CAAP1_SSS,Gap:1;Bar:Gene
+CCGTGTCTCCAGTATGCCTATC,,,,DNHD1_SSS,Gap:1;Bar:Gene
+CTATGACAAAAGAATATTCCTTC,,,,GOLGA3_SSS,Gap:13;Bar:Gene
+CATTCATGGACATTGCTTCTAC,,,,MAP3K7_SSS,Gap:5;Bar:Gene
+No match,,,,UnknownSSS,,,

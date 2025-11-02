@@ -5,7 +5,7 @@ Correct SNPs,true,,,,,
 Correct indels,true,,,,,
 Orientation,reverse,,,,,
 ,,,,,,
-Barcode,Plate,Well,Condition,Read Type,Next Commands,Output File Number
+Barcode,Plate,Well,Condition,Read Type,Next Commands,Output File Name(s)
 CCGCGGCTCA,1,A1,,,,
 GGCTCCTCGT,1,A2,,,,
 GTTACGCAAG,1,A3,,,,

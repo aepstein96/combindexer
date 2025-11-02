@@ -1,4 +1,4 @@
 ﻿Output name,File name,Write by default?,"Header (use f-string format). Write ""auto"" for auto-configure",Sequence
-cdna,{SAMPLE}_cdna.fastq.gz,Yes,"{RT:PlateWell};{P5:PlateWell};{P7:PlateWell}&{RT:Condition};{P7:Condition},{UMI},{RT:ReadType},{P7:ReadType}",{Read:R2}
-bar_umi,{SAMPLE}_barcodes.fastq.gz,Yes,"{RT:PlateWell};{P5:PlateWell};{P7:PlateWell}&{RT:Condition};{P7:Condition},{UMI},{RT:ReadType},{P7:ReadType}",{Barcode:RT(10)}{Barcode:P5(10)}{Barcode:P7(10)}{UMI(8)}
-csv,{SAMPLE}.csv,Yes,"{RT:PlateWell},{P5:PlateWell},{P7:PlateWell},{RT:Condition},{P7:Condition},{UMI},{RT:ReadType},{P7:ReadType}","{Read:R1},{Read:R2}"
+gex_cdna,{SAMPLE}_cdna.fastq.gz,Yes,"{RT:PlateWell};{P5:PlateWell};{P7:PlateWell}&{RT:Condition},{UMI},{RT:ReadType}",{Read:R2}
+bar_umi,{SAMPLE}_barcodes.fastq.gz,Yes,"{RT:PlateWell};{P5:PlateWell};{P7:PlateWell}&{RT:Condition};{P7:Condition},{UMI},{RT:ReadType};{P7:ReadType}",{Barcode:RT(10)}{Barcode:P5(10)}{Barcode:P7(10)}{UMI}
+snps_csv,{SAMPLE}.snps.csv,No,"{RT:PlateWell},{P5:PlateWell},{P7:PlateWell},{RT:Condition},{UMI},{RT:ReadType},{RTPrimer:ReadType},{SSSPrimer:ReadType},{Gene:ReadType}","{Read:R1},{Read:R2}"

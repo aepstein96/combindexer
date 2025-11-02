@@ -11,7 +11,7 @@ import csv
 from string import Formatter
 
 
-# For a given barcode, returns list of barcodes a given Levenshtein distance away
+# For a given barcode, returns list of barcodes a given Levenshtein distance away. This is essential for efficient barcode correction.
 def getCombinedVariants(
     seq, 
     distance,
@@ -103,12 +103,24 @@ def getCorrDict(correct_bars, default=None, ambiguous=None, **kwargs):
 
     return out_dict
 
+def findCorrectBarcode(var_seq, candidates):
+    if len(candidates) == 1:
+        return candidates[0][0]
+
+    min_dist = min(c[1] for c in candidates)
+    best_matches = [c[0] for c in candidates if c[1] == min_dist]
+
+    if len(best_matches) == 1:
+        return best_matches[0]
+    
+    return False
+
 # Returns reverse complement of sequence
 # Not as flexible as Bio.Seq, but probably faster and easier to use
 def revComp(seq, comp_dict={'A':'T','G':'C','C':'G','T':'A','N':'N'}):
     return ''.join([comp_dict[base] for base in seq[::-1]])
 
-
+# Handles a single input read file, including the barcode positions and UMIs contained within it
 class InputRead:
     def __init__(self, name, sample, commands, file_pattern, trim_partner=None, trim_partner_len=17, min_length=20, debug_mode=False):
         self.name = name
@@ -139,13 +151,15 @@ class InputRead:
     def __exit__(self, exc_type, exc_value, exc_traceback):
         self.input.close()
     
+    # Moves on to the next read sequence in the input file
     def nextRead(self):
         # Read in data from file
         self.head = self.input.readline().rstrip() # remove newline marker, it will be put back later
         self.seq = self.input.readline().rstrip()
         self.sep = self.input.readline().rstrip()
         self.qual = self.input.readline().rstrip()
-        
+    
+    # For a given read sequence, returns the barcodes and UMIs contained within it
     def getBarcodes(self, barcode_dict, debug_mode=False):
             
         start = 0
@@ -220,6 +234,118 @@ class InputRead:
         
         return True
 
+
+# General output file class, handles writing to either FASTQ or CSV files
+class OutputFile:
+    def __init__(self, name, sample, file_pattern, header_field_str, sequence_field_str, default_write=True, default_qual='I'):
+        self.name = name
+        self.sample = sample
+        self.out_path = file_pattern.replace("{SAMPLE}", sample)
+        self.out = None
+        self.default_write = default_write
+        self.default_qual = default_qual
+        
+        # Parse header and sequence field strings (assembly will be done during writing)
+        self.header_field_str = header_field_str
+        self.sequence_field_str = sequence_field_str
+        
+        # Determine output type based on file extension
+        if self.out_path.endswith('.gz'):
+            self.open_func = gzip.open
+        else:
+            self.open_func = open
+        
+        if any(self.out_path.lower().endswith(ext) for ext in ['.fastq.gz', '.fq.gz', '.fastq', '.fq']):
+            self.output_type = 'fastq'
+        else:
+            self.output_type = 'csv'
+            
+    def __enter__(self):
+        self.out = self.open_func(self.out_path, 'wt')
+        if self.output_type == 'csv':
+            self.out.write(self.header_field_str.replace('{', '').replace('}', '') + ',' + self.sequence_field_str.replace('{', '').replace('}', '') + '\n')
+        return self
+    
+    def __exit__(self, exc_type, exc_value, exc_traceback):
+        self.out.close()
+        
+    def write(self, current_barcodes, current_reads, current_UMI = '', current_UMI_qual = None):
+        if not self.out:
+            raise ValueError("Can't write to output file because it's not open")
+        
+        # Assemble and parse header fields
+        parsed = Formatter().parse(self.header_field_str)
+        header_string = ''
+        for literal, barcode_pos, field, _ in parsed: # slight modification to standard f-string format for my own purposes
+            if literal:
+                header_string += literal
+            if barcode_pos == 'UMI':
+                header_string += current_UMI
+                
+            elif field == 'PlateWell':
+                plate = current_barcodes[barcode_pos].plate
+                well = current_barcodes[barcode_pos].well
+                if plate and well:
+                    header_string += (plate + '-' + well)
+                else:
+                    header_string += (plate + well)
+                
+            elif field == 'Condition':
+                header_string += current_barcodes[barcode_pos].condition
+                
+            elif field == 'ReadType':
+                header_string += current_barcodes[barcode_pos].read_type
+                
+            elif field == 'Seq':
+                header_string += current_barcodes[barcode_pos].seq
+                
+            else:
+                raise ValueError("Invalid field: %s" % field)
+            
+            
+        # Assemble and parse sequence fields
+        parsed = Formatter().parse(self.sequence_field_str)
+        sequence_string = ''
+        qual_string = ''
+        for literal, output_type, output_name, _ in parsed: # slight modification to standard f-string format for my own purposes
+            if literal:
+                sequence_string += literal
+                qual_string += self.default_qual * len(literal)
+                
+            if output_type == 'UMI':
+                sequence_string += current_UMI
+                if current_UMI_qual is None:
+                    current_UMI_qual = self.default_qual * len(current_UMI)
+                qual_string += current_UMI_qual
+            else:
+                # Extract length if needed
+                if '(' in output_name:
+                    output_name, output_len = output_name.split('(')
+                    output_len = int(output_len.rstrip(')'))
+                else:
+                    output_len = None # use entire equence
+                    
+                if output_type == 'Read':
+                    sequence_string += current_reads[output_name].seq[:output_len]
+                    qual_string += current_reads[output_name].qual[:output_len]
+                elif output_type == 'Barcode':
+                    sequence_string += current_barcodes[output_name].seq[:output_len]
+                    
+                    if output_len is None:
+                        output_len = len(current_barcodes[output_name].seq)
+                    qual_string += self.default_qual * output_len
+                
+        
+        if self.output_type == 'fastq':
+            self.out.write('@' + header_string + '\n')
+            self.out.write(sequence_string + '\n')
+            self.out.write('+\n')
+            self.out.write(qual_string + '\n')
+            
+        elif self.output_type == 'csv':
+            self.out.write(header_string + ',' + sequence_string + '\n')
+
+# This is a single barcode, e.g. "CATGATA", corresponding to well A1, condition HeLa, read type oligo-dT, etc.
 class Barcode:
     def __init__(self, seq='', plate='', well='', condition='', read_type='', next_commands=[], output_files=''):
         self.seq = seq # full sequence, including part that is not used
@@ -236,7 +362,9 @@ class Barcode:
             self.output_targets = {target.strip() for target in output_files.split(';') if target.strip()}
         else:
             self.output_targets = set()
+            
 
+# This is a barcode position, e.g. "RT". It contains a list of barcodes, each of which is a Barcode object.
 class BarcodePos:
     def __init__(self, bar_list, length_to_use, plate_list, corr_dist, orientation, correct_snps, correct_indels, debug_mode=False):
         
@@ -292,15 +420,9 @@ class BarcodePos:
         for var_seq, candidates in potential_corrections.items():
             correct_bar = findCorrectBarcode(var_seq, candidates)
             if correct_bar:
-                if debug_mode:
-                    print("Var seq: %s. Correct bar: %s" % (var_seq, correct_bar.seq))
                 self.corr_dict[var_seq] = correct_bar
-            else:
-                if debug_mode:
-                    print("Var seq: %s. No correct bar found" % var_seq)
-                    
-                if self.ambiguous:
-                    self.corr_dict[var_seq] = self.ambiguous
+            elif self.ambiguous:
+                self.corr_dict[var_seq] = self.ambiguous
                         
     
     # Returns barcode information
@@ -308,107 +430,7 @@ class BarcodePos:
         return self.corr_dict[bar_seq]
 
 
-class OutputFile:
-    def __init__(self, name, sample, file_pattern, header_field_str, sequence_field_str, default_write=True, default_qual='I'):
-        self.name = name
-        self.sample = sample
-        self.out_path = file_pattern.replace("{SAMPLE}", sample)
-        self.out = None
-        self.default_write = default_write
-        self.default_qual = default_qual
-        
-        # Parse header and sequence field strings (assembly will be done during writing)
-        self.header_field_str = header_field_str
-        self.sequence_field_str = sequence_field_str
-        
-        if self.out_path.endswith('.gz'):
-            self.open_func = gzip.open
-        else:
-            self.open_func = open
-            
-        if 'fastq' in self.out_path.lower():
-            self.output_type = 'fastq'
-        else:
-            self.output_type = 'csv'
-            
-    def __enter__(self):
-        self.out = self.open_func(self.out_path, 'wt')
-        if self.output_type == 'csv':
-            self.out.write(self.header_field_str.replace('{', '').replace('}', '') + ',' + self.sequence_field_str.replace('{', '').replace('}', '') + '\n')
-        return self
-    
-    def __exit__(self, exc_type, exc_value, exc_traceback):
-        self.out.close()
-        
-    def write(self, current_barcodes, current_reads, current_UMI = '', current_UMI_qual = None):
-        if not self.out:
-            raise ValueError("Can't write to output file because it's not open")
-        
-        # Assemble and parse header fields
-        parsed = Formatter().parse(self.header_field_str)
-        header_string = ''
-        for literal, barcode_pos, field, _ in parsed: # slight modification to standard f-string format for my own purposes
-            if literal:
-                header_string += literal
-            if barcode_pos == 'UMI':
-                header_string += current_UMI
-            elif field == 'PlateWell':
-                header_string += current_barcodes[barcode_pos].plate + '-' + current_barcodes[barcode_pos].well
-            elif field == 'Condition':
-                header_string += current_barcodes[barcode_pos].condition
-            elif field == 'ReadType':
-                header_string += current_barcodes[barcode_pos].read_type
-            elif field == 'Seq':
-                header_string += current_barcodes[barcode_pos].seq
-            else:
-                raise ValueError("Invalid field: %s" % field)
-            
-            
-        # Assemble and parse sequence fields
-        parsed = Formatter().parse(self.sequence_field_str)
-        sequence_string = ''
-        qual_string = ''
-        for literal, output_type, output_name, _ in parsed: # slight modification to standard f-string format for my own purposes
-            if literal:
-                sequence_string += literal
-                qual_string += self.default_qual * len(literal)
-                
-            if output_type == 'UMI':
-                sequence_string += current_UMI
-                if current_UMI_qual is None:
-                    current_UMI_qual = self.default_qual * len(current_UMI)
-                qual_string += current_UMI_qual
-            elif output_type == 'Read':
-                sequence_string += current_reads[output_name].seq
-                qual_string += current_reads[output_name].qual
-            elif output_type == 'Barcode':
-                sequence_string += current_barcodes[output_name].seq
-                qual_string += self.default_qual * len(current_barcodes[output_name].seq)
-                
-        
-        if self.output_type == 'fastq':
-            self.out.write(header_string + '\n')
-            self.out.write(sequence_string + '\n')
-            self.out.write('+\n')
-            self.out.write(qual_string + '\n')
-            
-        elif self.output_type == 'csv':
-            self.out.write(header_string + ',' + sequence_string + '\n')
-
-
-def findCorrectBarcode(var_seq, candidates):
-    if len(candidates) == 1:
-        return candidates[0][0]
-
-    min_dist = min(c[1] for c in candidates)
-    best_matches = [c[0] for c in candidates if c[1] == min_dist]
-
-    if len(best_matches) == 1:
-        return best_matches[0]
-    
-    return False
-
-
+# Make dictionary of barcode positions. Each barcode position is a BarcodePos object.
 def makeBarDict(barcode_folder, debug_mode=False):
     bar_dict = {}
     for bar_file in os.listdir(barcode_folder):
@@ -474,7 +496,7 @@ def makeBarDict(barcode_folder, debug_mode=False):
             bar_dict[name] = BarcodePos(bar_list, length_to_use, plate_list, corr_dist, orientation, correct_snps, correct_indels, debug_mode)
     return bar_dict
 
-
+# Make dictionary of input reads. Each input read is an InputRead object.
 def makeInputReadDict(sample, reads_file, input_folder, debug_mode=False):
     # Get input read information
     input_read_dict = {}
@@ -508,7 +530,7 @@ def makeInputReadDict(sample, reads_file, input_folder, debug_mode=False):
 
     return input_read_dict
 
-
+# Make dictionary of output files. Each output file is an OutputFile object.
 def makeOutputFiles(sample, outputs_file, output_folder):
     output_files = {}
     default_output_files = []
@@ -522,12 +544,12 @@ def makeOutputFiles(sample, outputs_file, output_folder):
 
             # Prepend output_folder to file_pattern
             full_file_pattern = os.path.join(output_folder, file_pattern)
-            output_file = OutputFile(sample, name, full_file_pattern, header_field_str, sequence_field_str)
+            output_file = OutputFile(name, sample, full_file_pattern, header_field_str, sequence_field_str)
             output_files[name] = output_file
             
     return output_files, default_output_files
 
-
+# Process a single sample, including all input reads and output files
 def barcodeReadsSample(sample, barcode_folder, input_folder, output_folder, debug_mode=False):
     # Make input read dictionary
     reads_file = os.path.join(barcode_folder, "Reads.csv")
@@ -603,18 +625,25 @@ def barcodeReadsSample(sample, barcode_folder, input_folder, output_folder, debu
                 all_output_targets |= bar.output_targets  # Set union
             
             all_output_targets = list(all_output_targets)
+            
+            if debug_mode:
+                print("All output targets: %s" % all_output_targets)
+            
             for output_target in all_output_targets:
                 if output_target not in output_file_dict.keys():
                     raise ValueError("Output target %s not found in output file dictionary" % output_target)
+            
             
             if not all_output_targets:
                 all_output_targets = default_output_files
             
             # Write to output files
+            if debug_mode:
+                print("Writing to output files: %s" % all_output_targets)
             for output_target in all_output_targets:
                 output_file_dict[output_target].write(cur_bars, input_read_dict, cur_UMI, UMI_qual)
 
-
+# Distribute the processing of multiple samples across multiple cores
 def barcodeReadsMulti(input_folder, output_folder, barcode_folder, cores, debug_mode=False):
     sample_list = []
     with open(os.path.join(barcode_folder,"Samples.csv"), 'rt') as f:
