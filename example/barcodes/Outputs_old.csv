@@ -1,0 +1,4 @@
+Output name,File name,Write by default?,"Header (use f-string format). Write ""auto"" for auto-configure",Sequence
+cdna,{SAMPLE}_gex_cdna.fastq.gz,Yes,"{RT:PlateWell};{P5:PlateWell};{P7:PlateWell}&{RT:Condition},{UMI},{RT:ReadType}",{Read:R2}
+bar_umi,{SAMPLE}_barcodes.fastq.gz,Yes,"{RT:PlateWell};{P5:PlateWell};{P7:PlateWell}&{RT:Condition},{UMI},{RT:ReadType}",{Barcode:RT(10)}{Barcode:P5(10)}{Barcode:P7(10)}{UMI(8)}
+csv,{SAMPLE}.csv,Yes,"{RT:PlateWell},{P5:PlateWell},{P7:PlateWell},{RT:Condition},{UMI},{RT:ReadType}","{Read:R1},{Read:R2}"

@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "combindexer"
+version = "0.1.0"
+description = "Universal processing pipeline for combinatorial indexing data with flexible barcode correction and UMI assignment"
+readme = "README.md"
+requires-python = ">=3.7"
+dependencies = [
+    "fire>=0.5.0",
+]
+
+[project.scripts]
+combindexer = "combindexer.readBarcoding:barcodeReadsMulti"
+combindexer-count = "combindexer.countTargetedReads:main"
+
+[tool.setuptools]
+packages = ["combindexer"]
+
+
