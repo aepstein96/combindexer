@@ -12,8 +12,6 @@ from string import Formatter
 
 
 # For a given barcode, returns list of barcodes a given Levenshtein distance away
-
-
 def getCombinedVariants(
     seq, 
     distance,
@@ -140,10 +138,6 @@ class InputRead:
     
     def __exit__(self, exc_type, exc_value, exc_traceback):
         self.input.close()
-        
-        # Close all output files 
-        #for out_file in self.out_files:
-        #    out_file.close()
     
     def nextRead(self):
         # Read in data from file
@@ -164,7 +158,6 @@ class InputRead:
             return UMI, UMI_qual, cur_bars
         
         command_queue = deque(self.commands)
-        #print("getBarcodes triggered! Sample: %s. Read name: %s" % (self.sample, self.name))
         trim_pos = 0
         while command_queue:
             command_name = command_queue.popleft()
@@ -174,7 +167,6 @@ class InputRead:
                 
             elif command_name.startswith('Gap:'):
                 start += int(command_name[4:])
-                #print("Start after gap: %d" % start)
                 
             elif command_name.startswith('UMI:'):
                 UMI_len = int(command_name[4:])
@@ -188,8 +180,7 @@ class InputRead:
                 start += UMI_len
                 
             elif command_name == 'Trim':
-                trim_pos = start
-                
+                trim_pos = start    
     
             elif command_name.startswith('Bar:'): # a barcode
                 bar_name = command_name[4:]
@@ -202,12 +193,9 @@ class InputRead:
                         print("No match for %s. Start: %d. File: %s. Read sequence: %s. Test sequence: %s" % (bar_name, start, self.file_path, self.seq, potential_bar_seq))
                     return False
                 
-                #print("Bar name: %s. Bar sequence: %s. Read bar sequence: %s. Length: %d" % (bar_name, bar.seq, self.seq[start:start+bar_pos.length], bar.length))
-                
                 start += bar.length
                 cur_bars[bar_name] = bar
                 if bar.next_commands:
-                    #print("Found next commands! Remaining commands: %s" % str(bar.next_commands))
                     command_queue = deque(bar.next_commands)
             else:
                 raise ValueError("Command not found: %s. Valid commands: Goto:<pos>, Gap:<len>, UMI:<len>, Trim, Bar:<name>" % command_name)
@@ -235,6 +223,7 @@ class InputRead:
 class Barcode:
     def __init__(self, seq='', plate='', well='', condition='', read_type='', next_commands=[], output_files=''):
         self.seq = seq # full sequence, including part that is not used
+        self.matching_seq = seq # sequence that is used for matching; will later be truncated to the length used for matching
         self.plate = plate
         self.well = well
         self.condition = condition
@@ -247,19 +236,17 @@ class Barcode:
             self.output_targets = {target.strip() for target in output_files.split(';') if target.strip()}
         else:
             self.output_targets = set()
-        
+
 class BarcodePos:
     def __init__(self, bar_list, length_to_use, plate_list, corr_dist, orientation, correct_snps, correct_indels, debug_mode=False):
         
         # Get length of shortest barcode, this is what will be used for disambiguation
         # Also see if there is a default for "No match"
-
         self.no_match = None
         self.ambiguous = None
         min_length = length_to_use
         true_bars = [] # doesn't include no match
         for bar in bar_list:
-
             
             # Define no match and ambiguous barcodes
             if bar.seq == 'No match':
@@ -279,7 +266,7 @@ class BarcodePos:
         self.length = min_length
         self.plate_list = plate_list
         self.orientation = orientation
-                
+
         # Make barcode correction dictionary
         potential_corrections = defaultdict(list)
         for bar in true_bars:
@@ -294,6 +281,7 @@ class BarcodePos:
             
             post_context = seq[min_length:]
             bar_seq = seq[:min_length]
+            bar.matching_seq = bar_seq
 
             
             variants_map = getCombinedVariants(bar_seq, corr_dist, post_context, correct_snps, correct_indels)
@@ -407,7 +395,6 @@ class OutputFile:
         elif self.output_type == 'csv':
             self.out.write(header_string + ',' + sequence_string + '\n')
 
-    
 
 def findCorrectBarcode(var_seq, candidates):
     if len(candidates) == 1:
@@ -487,6 +474,7 @@ def makeBarDict(barcode_folder, debug_mode=False):
             bar_dict[name] = BarcodePos(bar_list, length_to_use, plate_list, corr_dist, orientation, correct_snps, correct_indels, debug_mode)
     return bar_dict
 
+
 def makeInputReadDict(sample, reads_file, input_folder, debug_mode=False):
     # Get input read information
     input_read_dict = {}
@@ -520,6 +508,7 @@ def makeInputReadDict(sample, reads_file, input_folder, debug_mode=False):
 
     return input_read_dict
 
+
 def makeOutputFiles(sample, outputs_file, output_folder):
     output_files = {}
     default_output_files = []
@@ -538,14 +527,14 @@ def makeOutputFiles(sample, outputs_file, output_folder):
             
     return output_files, default_output_files
 
+
 def barcodeReadsSample(sample, barcode_folder, input_folder, output_folder, debug_mode=False):
-    
     # Make input read dictionary
     reads_file = os.path.join(barcode_folder, "Reads.csv")
     input_read_dict = makeInputReadDict(sample, reads_file, input_folder, debug_mode)
             
     # Make output file dictionary
-    outputs_file = os.path.join(barcode_folder, "outputs.csv")
+    outputs_file = os.path.join(barcode_folder, "Outputs.csv")
     output_file_dict, default_output_files = makeOutputFiles(sample, outputs_file, output_folder)
     
     # Make barcode position dictionary
@@ -624,10 +613,9 @@ def barcodeReadsSample(sample, barcode_folder, input_folder, output_folder, debu
             # Write to output files
             for output_target in all_output_targets:
                 output_file_dict[output_target].write(cur_bars, input_read_dict, cur_UMI, UMI_qual)
-                
-    
+
+
 def barcodeReadsMulti(input_folder, output_folder, barcode_folder, cores, debug_mode=False):
-    
     sample_list = []
     with open(os.path.join(barcode_folder,"Samples.csv"), 'rt') as f:
         f.readline()
@@ -636,12 +624,10 @@ def barcodeReadsMulti(input_folder, output_folder, barcode_folder, cores, debug_
             
     p = Pool(processes = int(cores))
     func = partial(barcodeReadsSample, barcode_folder=barcode_folder, input_folder=input_folder, output_folder=output_folder, debug_mode=debug_mode)
-    result = p.map(func, sample_list)
+    p.map(func, sample_list)
     p.close()
     p.join()
-                
+
 
 if __name__ == '__main__':
     fire.Fire(barcodeReadsMulti)
-    
-    

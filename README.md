@@ -8,36 +8,50 @@ Combindexer is a flexible barcoding pipeline for custom single-cell genomics met
 
 - **Flexible Barcode Configuration**: Define multiple barcode types with custom positions, correction distances, and orientations. Uniquely define cells by combinations of barcodes. 
 - **Individual barcode whitelists**: Packages such as STARsolo allow multiple barcodes, but require a whitelist that individually contains each combination of barcodes. With combinatorial indexing methods, this can be millions of combinations! Combindexer allows individual barcode whitelists to be specified for each barcode.
-- **Flexible barcode correction**: 
-
-### Key Features
-
-- **Error Correction**: Automatic correction of sequencing errors (SNPs and indels) using Levenshtein distance
-- **UMI Extraction**: Supports UMI extraction from any position in the read
-- **Multi-Read Processing**: Processes multiple reads simultaneously (e.g., R1, R2, I1, I2)
-- **Conditional Barcode Matching**: Supports hierarchical barcode matching with conditional next steps
-- **Read Trimming**: Automatic trimming based on reverse complement matching between paired reads
-- **Parallel Processing**: Multiprocessing support for processing multiple samples simultaneously
-- **Flexible Output**: Can output to CSV files, FASTQ files, or both based on barcode configuration
+- **Flexible barcode correction**: Barcode correction can account for SNPs, indels, 
+- **Flexible export for compatibility with downstream gene counting programs:** Barcodes can be reconfigured in near-10X format for compatibility with STARSolo (see example), alevin-fry, etc. Alternatively, they can also be exported as a CSV. The order in which barcodes are exported is also customizable.
 
 ## Installation
 
-### Requirements
+To install Combindexer using `pyproject.toml`, follow these steps:
 
-- Python 3.7+
-- Required packages:
-  - `fire` (for CLI interface)
-  - Standard library: `collections`, `contextlib`, `multiprocessing`, `functools`, `gzip`, `glob`, `sys`, `os`
+1. **Clone the repository:**
+   ```bash
+   git clone <repository-url>
+   cd combindexer
+   ```
 
-### Installation Steps
+2. **(Recommended) Create a virtual environment:**
+   ```bash
+   python -m venv venv
+   source venv/bin/activate
+   ```
+
+3. **Install using `pip` (supports PEP 517/518 builds):**
+   ```bash
+   pip install .
+   ```
+
+   Alternatively, if you want to install in editable (development) mode:
+   ```bash
+   pip install -e .
+   ```
+
+4. **Verify installation:**
+   ```bash
+   python -m pip show combindexer
+   ```
+
+This will install Combindexer along with its dependencies as specified in `pyproject.toml`. No need to use `setup.py`.
+If you do not have `pip` version 21.0 or newer, update it for best support of PEP 517/518 builds:
 
 ```bash
-# Clone or navigate to the repository
-cd combindexer
-
-# Install dependencies (if using a virtual environment)
-pip install fire
+pip install --upgrade pip
 ```
+
+If you have issues, ensure you are using Python 3.7 or higher and a recent version of `pip` and `setuptools`.
+
+
 
 ## Directory Structure
 

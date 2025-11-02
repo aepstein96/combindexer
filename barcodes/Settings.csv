@@ -1,8 +1,0 @@
-Date,2023-04-02 00:00:00
-Experiment Name,Joint P53 sequencing
-Input Folder,/ru-auth/local/home/aepstein/cursor_projects/jointsci-cell-culture/intermediate_files/fastq_files
-Intermediate Folder,/ru-auth/local/home/aepstein/cursor_projects/jointsci-cell-culture/intermediate_files/run2_gex
-Output Folder,/ru-auth/local/home/aepstein/cursor_projects/jointsci-cell-culture/intermediate_files/run2_gex_output
-Reference Index Folder,/lustre/fs4/cao_lab/scratch/zxu/gencode_ref_anno/human_v38_050521/hg38_STAR_index
-Reference GTF,/lustre/fs4/cao_lab/scratch/zxu/gencode_ref_anno/human_v38_050521/gencode.v38.primary_assembly.annotation.gtf.gz
-Cores,24
