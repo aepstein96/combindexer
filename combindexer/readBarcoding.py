@@ -269,6 +269,7 @@ class OutputFile:
     def __exit__(self, exc_type, exc_value, exc_traceback):
         self.out.close()
         
+        
     def write(self, current_barcodes, current_reads, current_UMI = '', current_UMI_qual = None):
         if not self.out:
             raise ValueError("Can't write to output file because it's not open")
@@ -330,7 +331,7 @@ class OutputFile:
                     qual_string += current_reads[output_name].qual[:output_len]
                 elif output_type == 'Barcode':
                     sequence_string += current_barcodes[output_name].seq[:output_len]
-                    
+                
                     if output_len is None:
                         output_len = len(current_barcodes[output_name].seq)
                     qual_string += self.default_qual * output_len
@@ -636,6 +637,11 @@ def barcodeReadsSample(sample, barcode_folder, input_folder, output_folder, debu
             
             if not all_output_targets:
                 all_output_targets = default_output_files
+            
+            # Fill in any missing barcodes with empty barcodes
+            for bar_name in bar_pos_dict.keys():
+                if bar_name not in cur_bars:
+                    cur_bars[bar_name] = Barcode()
             
             # Write to output files
             if debug_mode:
