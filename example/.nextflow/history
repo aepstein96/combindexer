@@ -1,0 +1,17 @@
+2025-11-24 20:28:48	-	adoring_heyrovsky	-	f53d9047d94f3c75f335b2bb5104ec1b	d4eb5e88-132d-44b9-9dff-25be8399ac59	nextflow run test.nf
+2025-11-24 20:32:43	-	mighty_morse	-	4463c915ed0a55a427b66d78716059fd	0f138cd1-b371-4033-8e07-1b11ceb3b64f	nextflow run test.nf
+2025-11-24 20:32:54	3.1s	cheesy_boltzmann	OK	5db776286f28a4eaab2ada2d3532065c	b33c9b4a-62c3-4665-a54b-49f26a7ecfdb	nextflow run test.nf
+2025-11-24 20:37:11	2.8s	insane_bassi	OK	a59d27e7b3dba31d1cfc8b9b339d47e3	3de623d1-e49b-4c83-ad88-8299e75ef7b4	nextflow run test.nf
+2025-11-24 20:37:36	2.6s	curious_morse	OK	0c3cdb230be612754946f03d2d303ca8	841b6d1a-731d-480e-b368-0d7164f611b6	nextflow run test.nf
+2025-11-24 20:40:16	-	confident_tuckerman	-	4cc0356d72a130b2b2578e647f267538	cc2af39c-6422-4279-bb94-4df5805d20c9	nextflow run main.nf --samples_file barcodes/Samples.csv
+2025-11-24 20:40:52	-	thirsty_mahavira	-	2925d1b53c43b375d3b9240f0fe7e53e	18a86a21-7c90-4cd2-9607-549d6d19bdf3	nextflow run main.nf --samples_file barcodes/Samples.csv
+2025-11-24 20:43:47	3s	lonely_noyce	OK	00abcee9df58e6f939ff8ebc75c770b8	38df07c4-514b-4c44-9c73-e1e81df6cf8c	nextflow run main.nf --samples_file barcodes/Samples.csv
+2025-11-24 20:50:43	3.3s	condescending_bardeen	OK	1f51f7bbc1552d241c6e825ea9e2b083	2fc16a75-1bc7-4530-87d6-3928e6478c1c	nextflow run main.nf --samples_file barcodes/Samples.csv
+2025-11-24 21:59:13	-	condescending_swartz	-	e67fa625ef0fea01f5c6900fb7d8c7b5	2bf7b68b-517c-4ece-866c-2d912842dbba	nextflow run /lustre/fs4/cao_lab/store/aepstein/cursor_projects/combindexer/example/main.nf
+2025-11-24 22:08:32	-	modest_crick	-	6320bfcd5e2ae8ce41d7c4c95ed738d4	5098245a-c9bd-411a-98a3-44a90c805c9a	nextflow run /lustre/fs4/cao_lab/store/aepstein/cursor_projects/combindexer/example/main.nf -params-file params.json
+2025-11-24 22:12:33	-	goofy_panini	-	a725b4c53bb526c61340405d7ccfa6e7	272c70f4-8aa0-46eb-be81-1cc65d0fb36d	nextflow run /lustre/fs4/cao_lab/store/aepstein/cursor_projects/combindexer/example/main.nf -params-file params.json
+2025-11-24 22:15:36	-	furious_mandelbrot	-	870dcc36549fda0646d9070865558847	6df94e62-b56a-49b7-a970-b0586918c92b	nextflow run /lustre/fs4/cao_lab/store/aepstein/cursor_projects/combindexer/example/main.nf -params-file params.json
+2025-11-24 23:54:37	-	loving_fourier	-	a64394f0ac4ff31cddaf6f0a58d5fc2d	30bc63f6-decb-4b10-a672-21b46a1b5012	nextflow run /lustre/fs4/cao_lab/store/aepstein/cursor_projects/combindexer/example/main.nf -params-file params.json
+2025-11-25 00:46:56	1.7s	reverent_shaw	ERR	c71b4a7897fd8e47cfbe867d56e16763	0e5d328d-633a-4d39-8846-f9cdc7f559a9	nextflow run /lustre/fs4/cao_lab/store/aepstein/cursor_projects/combindexer/example/main.nf -params-file params.json
+2025-11-25 00:48:38	1.9s	furious_mirzakhani	ERR	c71b4a7897fd8e47cfbe867d56e16763	2ce79bf1-95ff-4799-bd3f-cc9dfaf55192	nextflow run /lustre/fs4/cao_lab/store/aepstein/cursor_projects/combindexer/example/main.nf -params-file params.json
+2025-11-25 00:50:12	38.7s	trusting_solvay	ERR	c71b4a7897fd8e47cfbe867d56e16763	5ac1acbb-6683-4520-80a7-2a903df2c367	nextflow run /lustre/fs4/cao_lab/store/aepstein/cursor_projects/combindexer/example/main.nf -params-file params.json

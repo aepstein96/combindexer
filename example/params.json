@@ -1,0 +1,7 @@
+{
+    "samples_file": "Samples.csv",
+    "input_folder": "data/fastq_files",
+    "barcode_folder_gex": "barcodes",
+    "barcode_folder_targ": "barcodes",
+    "output_folder": "data/output"
+}
