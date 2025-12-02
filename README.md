@@ -1,6 +1,7 @@
 # Combindexer
 
 Universal processing pipeline for combinatorial indexing data with flexible barcode correction and UMI assignment.
+Work in progress--in final stages of development. This version works; future changes are in the dev branch.
 
 ## Overview
 
